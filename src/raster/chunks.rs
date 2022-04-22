@@ -209,8 +209,8 @@ impl<'a> IndexableByPosition for RasterWindow<'a> {
 
     fn bound_position(&self, position: DrawPosition) -> PixelPosition {
         PixelPosition((
-            usize::min(i32::max(0, position.0 .0) as usize, self.width - 1),
-            usize::min(i32::max(0, position.0 .1) as usize, self.height - 1),
+            (position.0 .0.max(0) as usize).min(self.width - 1),
+            (position.0 .1.max(0) as usize).min(self.height - 1),
         ))
     }
 }
@@ -242,8 +242,8 @@ impl IndexableByPosition for RasterChunk {
 
     fn bound_position(&self, position: DrawPosition) -> PixelPosition {
         PixelPosition((
-            usize::min(i32::max(0, position.0 .0) as usize, self.size - 1),
-            usize::min(i32::max(0, position.0 .1) as usize, self.size - 1),
+            (position.0 .0.max(0) as usize).min(self.size - 1),
+            (position.0 .1.max(0) as usize).min(self.size - 1),
         ))
     }
 }
