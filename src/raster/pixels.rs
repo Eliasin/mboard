@@ -16,11 +16,24 @@ impl Pixel {
         Pixel(r + (g << 8) + (b << 16) + (a << 24))
     }
 
+    pub fn new_rgba_norm(r: f32, g: f32, b: f32, a: f32) -> Option<Pixel> {
+        let r = (r * 255.0) as u32;
+        let g = (g * 255.0) as u32;
+        let b = (b * 255.0) as u32;
+        let a = (a * 255.0) as u32;
+
+        if r > 255 || b > 255 || g > 255 || a > 255 {
+            None
+        } else {
+            Some(Pixel(r + (g << 8) + (b << 16) + (a << 24)))
+        }
+    }
+
     pub fn as_rgba(&self) -> (u8, u8, u8, u8) {
         let r = self.0 & 0xFF;
-        let g = self.0 & 0xFF00;
-        let b = self.0 & 0xFF0000;
-        let a = self.0 & 0xFF000000;
+        let g = (self.0 & 0xFF00) >> 8;
+        let b = (self.0 & 0xFF0000) >> 16;
+        let a = (self.0 & 0xFF000000) >> 24;
 
         (
             r.try_into().unwrap(),
@@ -28,6 +41,50 @@ impl Pixel {
             b.try_into().unwrap(),
             a.try_into().unwrap(),
         )
+    }
+
+    pub fn as_norm_rgba(&self) -> (f32, f32, f32, f32) {
+        let (r, g, b, a) = self.as_rgba();
+        (
+            r as f32 / 255.0,
+            g as f32 / 255.0,
+            b as f32 / 255.0,
+            a as f32 / 255.0,
+        )
+    }
+
+    fn composite_norm_component(c_a: f32, a_a: f32, c_b: f32, c: f32, a_o: f32) -> f32 {
+        let w = c_a * a_a + c_b * c;
+
+        w / a_o
+    }
+
+    pub fn composite_over(&mut self, other: &Self) {
+        let (a_r, a_g, a_b, a_a) = other.as_norm_rgba();
+        let (b_r, b_g, b_b, b_a) = self.as_norm_rgba();
+
+        let c = b_a * (1.0 - a_a);
+
+        let a_o: f32 = a_a + c;
+
+        let new_pixel = Pixel::new_rgba_norm(
+            Pixel::composite_norm_component(a_r, a_a, b_r, c, a_o),
+            Pixel::composite_norm_component(a_g, a_a, b_g, c, a_o),
+            Pixel::composite_norm_component(a_b, a_a, b_b, c, a_o),
+            a_o,
+        );
+
+        *self = new_pixel.unwrap();
+    }
+
+    pub fn is_close(&self, other: &Pixel, delta: u8) -> bool {
+        let (r, g, b, a) = self.as_rgba();
+        let (o_r, o_g, o_b, o_a) = other.as_rgba();
+
+        r.abs_diff(o_r) < delta
+            && g.abs_diff(o_g) < delta
+            && b.abs_diff(o_b) < delta
+            && a.abs_diff(o_a) < delta
     }
 }
 

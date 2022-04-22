@@ -385,6 +385,17 @@ impl RasterChunk {
 
         self.perform_row_operations(source, dest_position, |d, s| d.copy_from_slice(s));
     }
+
+    /// Draws a render window onto the raster chunk at `dest_position` using alpha compositing.
+    /// If the window at `dest_position` is not contained within the chunk,
+    /// the portion of the destination outside the chunk is ignored.
+    pub fn composite_over(&mut self, source: &RasterWindow, dest_position: DrawPosition) {
+        self.perform_row_operations(source, dest_position, |d, s| {
+            for (pixel_d, pixel_s) in d.iter_mut().zip(s.iter()) {
+                pixel_d.composite_over(pixel_s);
+            }
+        });
+    }
 }
 
 mod tests {
@@ -610,5 +621,35 @@ mod tests {
 
         assert!(raster_window.shrink(4, 4, 0, 0).is_none());
         assert!(raster_window.shrink(3, 4, 4, 4).is_none());
+    }
+
+    #[test]
+    fn test_easy_compositing() {
+        let mut raster_chunk = RasterChunk::new_fill(colors::red(), 8);
+
+        let draw_source = RasterChunk::new_fill(colors::blue(), 8);
+
+        raster_chunk.composite_over(&(&draw_source).into(), (0, 0).into());
+
+        let blended_pixel = Pixel::new_rgb(0, 0, 255);
+
+        for pixel in raster_chunk.pixels.iter() {
+            assert!(pixel.is_close(&blended_pixel, 2));
+        }
+    }
+
+    #[test]
+    fn test_medium_compositing() {
+        let mut raster_chunk = RasterChunk::new_fill(Pixel::new_rgb(128, 128, 128), 8);
+
+        let draw_source = RasterChunk::new_fill(Pixel::new_rgba(255, 255, 255, 128), 8);
+
+        raster_chunk.composite_over(&(&draw_source).into(), (0, 0).into());
+
+        let blended_pixel = Pixel::new_rgb(191, 191, 191);
+
+        for pixel in raster_chunk.pixels.iter() {
+            assert!(pixel.is_close(&blended_pixel, 2));
+        }
     }
 }
