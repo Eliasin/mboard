@@ -16,17 +16,21 @@ impl Pixel {
         Pixel(r + (g << 8) + (b << 16) + (a << 24))
     }
 
-    pub fn new_rgba_norm(r: f32, g: f32, b: f32, a: f32) -> Option<Pixel> {
-        let r = (r * 255.0) as u32;
-        let g = (g * 255.0) as u32;
-        let b = (b * 255.0) as u32;
-        let a = (a * 255.0) as u32;
+    pub fn new_rgb_norm(r: f32, g: f32, b: f32) -> Pixel {
+        let r = (r.clamp(0.0, 1.0) * 255.0) as u32;
+        let g = (g.clamp(0.0, 1.0) * 255.0) as u32;
+        let b = (b.clamp(0.0, 1.0) * 255.0) as u32;
 
-        if r > 255 || b > 255 || g > 255 || a > 255 {
-            None
-        } else {
-            Some(Pixel(r + (g << 8) + (b << 16) + (a << 24)))
-        }
+        Pixel(r + (g << 8) + (b << 16) + (255 << 24))
+    }
+
+    pub fn new_rgba_norm(r: f32, g: f32, b: f32, a: f32) -> Pixel {
+        let r = (r.clamp(0.0, 1.0) * 255.0) as u32;
+        let g = (g.clamp(0.0, 1.0) * 255.0) as u32;
+        let b = (b.clamp(0.0, 1.0) * 255.0) as u32;
+        let a = (a.clamp(0.0, 1.0) * 255.0) as u32;
+
+        Pixel(r + (g << 8) + (b << 16) + (a << 24))
     }
 
     pub fn as_rgba(&self) -> (u8, u8, u8, u8) {
@@ -74,7 +78,7 @@ impl Pixel {
             a_o,
         );
 
-        *self = new_pixel.unwrap();
+        *self = new_pixel;
     }
 
     pub fn is_close(&self, other: &Pixel, delta: u8) -> bool {

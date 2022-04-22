@@ -1,7 +1,7 @@
 # You must change these to your own details.
 [package]
-name = "rust-webpack-template"
-description = "My super awesome Rust, WebAssembly, and Webpack project!"
+name = "mboard"
+description = "Client for mboard virtual whiteboard."
 version = "0.1.0"
 authors = ["You <you@example.com>"]
 categories = ["wasm"]

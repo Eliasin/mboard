@@ -248,35 +248,28 @@ impl IndexableByPosition for RasterChunk {
     }
 }
 
-fn composite_over_color_component(c_a: u8, c_b: u8, a_a: u8, a_r: u8) -> u8 {
-    let src_alpha_inverse_proportion = ((255 - a_a) as f32) / 255.0;
-
-    let result_r = ((a_r * a_a
-        + ((c_b as f32) * (c_b as f32) * src_alpha_inverse_proportion) as u8)
-        / a_r) as u8;
-
-    result_r
-}
-
-fn composite_pixel(dest: &mut Pixel, src: &Pixel) {
-    let (dest_r, dest_g, dest_b, dest_a) = dest.as_rgba();
-    let (src_r, src_g, src_b, src_a) = src.as_rgba();
-}
-
-/// Performs the `over` alpha compositing on the two pixel slices. This will
-/// panic if the slices are not the same size.
-fn composite_slices_over(dest: &mut [Pixel], src: &[Pixel]) {
-    for i in 0..dest.len() {
-        composite_pixel(&mut dest[i], &src[i]);
-    }
-}
-
 type RowOperation = fn(&mut [Pixel], &[Pixel]) -> ();
 
 impl RasterChunk {
     /// Create a new raster chunk filled in with a pixel value.
     pub fn new_fill(pixel: Pixel, size: usize) -> RasterChunk {
         let pixels = vec![pixel; size * size];
+
+        RasterChunk {
+            pixels: pixels.into_boxed_slice(),
+            size,
+        }
+    }
+
+    /// Create a new raster chunk where each pixel value is filled in by a closure given the pixel's location.
+    pub fn new_fill_dynamic(f: fn(PixelPosition) -> Pixel, size: usize) -> RasterChunk {
+        let mut pixels = vec![colors::transparent(); size * size];
+
+        for row in 0..size {
+            for column in 0..size {
+                pixels[row * size + column] = f(PixelPosition::from((row, column)));
+            }
+        }
 
         RasterChunk {
             pixels: pixels.into_boxed_slice(),
@@ -650,6 +643,85 @@ mod tests {
 
         for pixel in raster_chunk.pixels.iter() {
             assert!(pixel.is_close(&blended_pixel, 2));
+        }
+    }
+
+    #[test]
+    fn test_dynamic_fill_checkerboard() {
+        let checkerboard_chunk = RasterChunk::new_fill_dynamic(
+            |p| {
+                let mut is_red = true;
+                if p.0 .0 % 2 == 0 {
+                    is_red = !is_red;
+                }
+
+                if p.0 .1 % 2 == 0 {
+                    is_red = !is_red;
+                }
+
+                if is_red {
+                    colors::red()
+                } else {
+                    colors::blue()
+                }
+            },
+            4,
+        );
+
+        let mut expected_checkerboard_chunk = RasterChunk::new_fill(colors::blue(), 4);
+
+        expected_checkerboard_chunk.pixels[0] = colors::red();
+        expected_checkerboard_chunk.pixels[2] = colors::red();
+
+        expected_checkerboard_chunk.pixels[5] = colors::red();
+        expected_checkerboard_chunk.pixels[7] = colors::red();
+
+        expected_checkerboard_chunk.pixels[8] = colors::red();
+        expected_checkerboard_chunk.pixels[10] = colors::red();
+
+        expected_checkerboard_chunk.pixels[13] = colors::red();
+        expected_checkerboard_chunk.pixels[15] = colors::red();
+
+        assert_eq!(
+            expected_checkerboard_chunk.pixels,
+            checkerboard_chunk.pixels
+        );
+    }
+
+    #[test]
+    fn test_dynamic_fill_gradient() {
+        let gradient_chunk = RasterChunk::new_fill_dynamic(
+            |p| {
+                Pixel::new_rgb_norm(
+                    (1.0 + p.0 .1 as f32) / 3.0,
+                    0.0,
+                    (1.0 + p.0 .0 as f32) / 3.0,
+                )
+            },
+            3,
+        );
+
+        let mut expected_gradient_chunk = RasterChunk::new(3);
+
+        expected_gradient_chunk.pixels[8] = Pixel::new_rgb_norm(1.0, 0.0, 1.0);
+        expected_gradient_chunk.pixels[7] = Pixel::new_rgb_norm(2.0 / 3.0, 0.0, 1.0);
+        expected_gradient_chunk.pixels[6] = Pixel::new_rgb_norm(1.0 / 3.0, 0.0, 1.0);
+
+        expected_gradient_chunk.pixels[5] = Pixel::new_rgb_norm(1.0, 0.0, 2.0 / 3.0);
+        expected_gradient_chunk.pixels[4] = Pixel::new_rgb_norm(2.0 / 3.0, 0.0, 2.0 / 3.0);
+        expected_gradient_chunk.pixels[3] = Pixel::new_rgb_norm(1.0 / 3.0, 0.0, 2.0 / 3.0);
+
+        expected_gradient_chunk.pixels[2] = Pixel::new_rgb_norm(1.0, 0.0, 1.0 / 3.0);
+        expected_gradient_chunk.pixels[1] = Pixel::new_rgb_norm(2.0 / 3.0, 0.0, 1.0 / 3.0);
+        expected_gradient_chunk.pixels[0] = Pixel::new_rgb_norm(1.0 / 3.0, 0.0, 1.0 / 3.0);
+
+        for (pixel, expected_pixel) in gradient_chunk
+            .pixels
+            .iter()
+            .zip(expected_gradient_chunk.pixels.iter())
+        {
+            println!("{:?}, {:?}", pixel.as_rgba(), expected_pixel.as_rgba());
+            assert!(pixel.is_close(expected_pixel, 2));
         }
     }
 }

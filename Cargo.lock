@@ -67,6 +67,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "mboard"
+version = "0.1.0"
+dependencies = [
+ "console_error_panic_hook",
+ "futures",
+ "js-sys",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
+ "web-sys",
+ "wee_alloc",
+]
+
+[[package]]
 name = "memory_units"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -106,20 +120,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "632d02bff7f874a36f33ea8bb416cd484b90cc66c1194b1a1110d067a7013f58"
 dependencies = [
  "proc-macro2 1.0.37",
-]
-
-[[package]]
-name = "rust-webpack-template"
-version = "0.1.0"
-dependencies = [
- "console_error_panic_hook",
- "futures",
- "js-sys",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wasm-bindgen-test",
- "web-sys",
- "wee_alloc",
 ]
 
 [[package]]
