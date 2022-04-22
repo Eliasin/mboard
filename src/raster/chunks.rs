@@ -1,3 +1,11 @@
+//! Collections of raster data and ways to draw and manipulate them.
+//!
+//! `RasterChunk` is a square-sized chunk of owned raster data that
+//! can be blitted and alpha composited onto.
+//!
+//! `RasterWindow` is a borrow of some raster data, this can be a full
+//! chunk or part of a `Pixel` slice.
+
 use std::convert::TryInto;
 
 use super::pixels::{colors, Pixel};
@@ -55,6 +63,7 @@ impl<'a> Into<RasterWindow<'a>> for &'a RasterChunk {
     }
 }
 
+/// Failure to create a `RasterWindow` from a slice due to incompatible sizing.
 #[derive(Debug)]
 pub struct InvalidPixelSliceSize {
     desired_width: usize,

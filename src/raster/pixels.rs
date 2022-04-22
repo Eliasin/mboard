@@ -1,3 +1,5 @@
+//! An RGBA pixel type that supports alpha compositing.
+
 use std::convert::TryInto;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -92,6 +94,7 @@ impl Pixel {
     }
 }
 
+/// Common color definitions.
 pub mod colors {
     use super::Pixel;
 

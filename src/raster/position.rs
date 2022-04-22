@@ -1,3 +1,9 @@
+//! Positions within and spatially related to collections of pixels.
+//!
+//! `PixelPosition` values are strictly within a collection of pixels.
+//!
+//! `DrawPosition` values are allowed to be outside of a collection to support partial drawing of raster data.
+
 use std::ops::Add;
 
 /// A position within a 2d collection of pixels.
