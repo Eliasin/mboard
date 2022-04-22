@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use super::pixels::{colors, Pixel};
 use super::position::{DrawPosition, PixelPosition};
 
@@ -202,15 +204,15 @@ impl<'a> IndexableByPosition for RasterWindow<'a> {
 
         BoundedIndex {
             index,
-            x_delta: (bounded_position.0 .0 as i32) - position.0 .0,
-            y_delta: (bounded_position.0 .1 as i32) - position.0 .1,
+            x_delta: TryInto::<i32>::try_into(bounded_position.0 .0).unwrap() - position.0 .0,
+            y_delta: TryInto::<i32>::try_into(bounded_position.0 .1).unwrap() - position.0 .1,
         }
     }
 
     fn bound_position(&self, position: DrawPosition) -> PixelPosition {
         PixelPosition((
-            (position.0 .0.max(0) as usize).min(self.width - 1),
-            (position.0 .1.max(0) as usize).min(self.height - 1),
+            (TryInto::<usize>::try_into(position.0 .0.max(0)).unwrap()).min(self.width - 1),
+            (TryInto::<usize>::try_into(position.0 .1.max(0)).unwrap()).min(self.height - 1),
         ))
     }
 }
@@ -235,15 +237,15 @@ impl IndexableByPosition for RasterChunk {
 
         BoundedIndex {
             index,
-            x_delta: (bounded_position.0 .0 as i32) - position.0 .0,
-            y_delta: (bounded_position.0 .1 as i32) - position.0 .1,
+            x_delta: TryInto::<i32>::try_into(bounded_position.0 .0).unwrap() - position.0 .0,
+            y_delta: TryInto::<i32>::try_into(bounded_position.0 .1).unwrap() - position.0 .1,
         }
     }
 
     fn bound_position(&self, position: DrawPosition) -> PixelPosition {
         PixelPosition((
-            (position.0 .0.max(0) as usize).min(self.size - 1),
-            (position.0 .1.max(0) as usize).min(self.size - 1),
+            (TryInto::<usize>::try_into(position.0 .0.max(0)).unwrap()).min(self.size - 1),
+            (TryInto::<usize>::try_into(position.0 .1.max(0)).unwrap()).min(self.size - 1),
         ))
     }
 }
@@ -313,9 +315,13 @@ impl RasterChunk {
         dest_position: DrawPosition,
     ) -> Option<RasterWindow<'a>> {
         let source_top_left_in_dest = self.get_index_from_bounded_position(dest_position);
-        let source_bottom_right_in_dest = self.get_index_from_bounded_position(
-            dest_position + ((source.width - 1) as i32, (source.height - 1) as i32),
+
+        let bottom_right: (i32, i32) = (
+            (source.width - 1).try_into().unwrap(),
+            (source.height - 1).try_into().unwrap(),
         );
+        let source_bottom_right_in_dest =
+            self.get_index_from_bounded_position(dest_position + bottom_right);
 
         let top_left_past_bottom_right =
             source_top_left_in_dest.y_delta < 0 || source_top_left_in_dest.x_delta < 0;
@@ -326,11 +332,11 @@ impl RasterChunk {
             return None;
         }
 
-        let shrink_top = source_top_left_in_dest.y_delta as usize;
-        let shrink_bottom = (-source_bottom_right_in_dest.y_delta) as usize;
+        let shrink_top = source_top_left_in_dest.y_delta.try_into().unwrap();
+        let shrink_bottom = (-source_bottom_right_in_dest.y_delta).try_into().unwrap();
 
-        let shrink_left = source_top_left_in_dest.x_delta as usize;
-        let shrink_right = (-source_bottom_right_in_dest.x_delta) as usize;
+        let shrink_left = source_top_left_in_dest.x_delta.try_into().unwrap();
+        let shrink_right = (-source_bottom_right_in_dest.x_delta).try_into().unwrap();
 
         source.shrink(shrink_top, shrink_bottom, shrink_left, shrink_right)
     }
