@@ -4,10 +4,10 @@ use std::ops::Add;
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct PixelPosition(pub (usize, usize));
 
-/// An position in which to blit something. Does not have to be inside the
+/// An position at which to draw something. Does not have to be inside the
 /// destination pixel collection.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct BlitPosition(pub (i32, i32));
+pub struct DrawPosition(pub (i32, i32));
 
 impl Add<PixelPosition> for PixelPosition {
     type Output = PixelPosition;
@@ -25,24 +25,24 @@ impl Add<(usize, usize)> for PixelPosition {
     }
 }
 
-impl Add<BlitPosition> for PixelPosition {
-    type Output = BlitPosition;
+impl Add<DrawPosition> for PixelPosition {
+    type Output = DrawPosition;
 
-    fn add(self, rhs: BlitPosition) -> Self::Output {
-        BlitPosition((self.0 .0 as i32 + rhs.0 .0, self.0 .1 as i32 + rhs.0 .1))
+    fn add(self, rhs: DrawPosition) -> Self::Output {
+        DrawPosition((self.0 .0 as i32 + rhs.0 .0, self.0 .1 as i32 + rhs.0 .1))
     }
 }
-impl Add<(i32, i32)> for BlitPosition {
-    type Output = BlitPosition;
+impl Add<(i32, i32)> for DrawPosition {
+    type Output = DrawPosition;
 
     fn add(self, rhs: (i32, i32)) -> Self::Output {
-        BlitPosition((self.0 .0 + rhs.0, self.0 .1 + rhs.1))
+        DrawPosition((self.0 .0 + rhs.0, self.0 .1 + rhs.1))
     }
 }
 
-impl From<(i32, i32)> for BlitPosition {
+impl From<(i32, i32)> for DrawPosition {
     fn from(p: (i32, i32)) -> Self {
-        BlitPosition(p)
+        DrawPosition(p)
     }
 }
 

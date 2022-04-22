@@ -1,5 +1,5 @@
 use super::pixels::{colors, Pixel};
-use super::position::{BlitPosition, PixelPosition};
+use super::position::{DrawPosition, PixelPosition};
 
 /// A square collection of pixels.
 #[derive(Debug)]
@@ -32,9 +32,9 @@ trait IndexableByPosition {
     fn get_index_from_position(&self, position: PixelPosition) -> Option<usize>;
     /// Returns a bounded index to the backing collection along with the shift applied to bound the
     /// position within the collection.
-    fn get_index_from_bounded_position(&self, position: BlitPosition) -> BoundedIndex;
+    fn get_index_from_bounded_position(&self, position: DrawPosition) -> BoundedIndex;
     /// Returns a bit position bounded into the underlying collection.
-    fn bound_position(&self, position: BlitPosition) -> PixelPosition;
+    fn bound_position(&self, position: DrawPosition) -> PixelPosition;
     /// Returns a slice representing a row of pixels.
     fn get_row_slice(&self, row_num: usize) -> Option<&[Pixel]>;
 }
@@ -188,7 +188,7 @@ impl<'a> IndexableByPosition for RasterWindow<'a> {
         Some(&self.backing[row_start..row_end + 1])
     }
 
-    fn get_index_from_bounded_position(&self, position: BlitPosition) -> BoundedIndex {
+    fn get_index_from_bounded_position(&self, position: DrawPosition) -> BoundedIndex {
         let bounded_position = self.bound_position(position);
 
         // Since we bound x and y, this is guaranteed to not panic as long as the total area is
@@ -207,7 +207,7 @@ impl<'a> IndexableByPosition for RasterWindow<'a> {
         }
     }
 
-    fn bound_position(&self, position: BlitPosition) -> PixelPosition {
+    fn bound_position(&self, position: DrawPosition) -> PixelPosition {
         PixelPosition((
             usize::min(i32::max(0, position.0 .0) as usize, self.width - 1),
             usize::min(i32::max(0, position.0 .1) as usize, self.height - 1),
@@ -227,7 +227,7 @@ impl IndexableByPosition for RasterChunk {
         Some(&self.pixels[row_start..row_end + 1])
     }
 
-    fn get_index_from_bounded_position(&self, position: BlitPosition) -> BoundedIndex {
+    fn get_index_from_bounded_position(&self, position: DrawPosition) -> BoundedIndex {
         let bounded_position = self.bound_position(position);
 
         let index = translate_rect_position_to_flat_index(bounded_position.0, self.size, self.size)
@@ -240,13 +240,38 @@ impl IndexableByPosition for RasterChunk {
         }
     }
 
-    fn bound_position(&self, position: BlitPosition) -> PixelPosition {
+    fn bound_position(&self, position: DrawPosition) -> PixelPosition {
         PixelPosition((
             usize::min(i32::max(0, position.0 .0) as usize, self.size - 1),
             usize::min(i32::max(0, position.0 .1) as usize, self.size - 1),
         ))
     }
 }
+
+fn composite_over_color_component(c_a: u8, c_b: u8, a_a: u8, a_r: u8) -> u8 {
+    let src_alpha_inverse_proportion = ((255 - a_a) as f32) / 255.0;
+
+    let result_r = ((a_r * a_a
+        + ((c_b as f32) * (c_b as f32) * src_alpha_inverse_proportion) as u8)
+        / a_r) as u8;
+
+    result_r
+}
+
+fn composite_pixel(dest: &mut Pixel, src: &Pixel) {
+    let (dest_r, dest_g, dest_b, dest_a) = dest.as_rgba();
+    let (src_r, src_g, src_b, src_a) = src.as_rgba();
+}
+
+/// Performs the `over` alpha compositing on the two pixel slices. This will
+/// panic if the slices are not the same size.
+fn composite_slices_over(dest: &mut [Pixel], src: &[Pixel]) {
+    for i in 0..dest.len() {
+        composite_pixel(&mut dest[i], &src[i]);
+    }
+}
+
+type RowOperation = fn(&mut [Pixel], &[Pixel]) -> ();
 
 impl RasterChunk {
     /// Create a new raster chunk filled in with a pixel value.
@@ -287,19 +312,13 @@ impl RasterChunk {
         }
     }
 
-    /// Blits a render window onto the raster chunk at `dest_position`.
-    /// If the window at `dest_position` is not contained within the chunk,
-    /// the portion of the destination outside the chunk is ignored.
-    pub fn blit(&mut self, source: &RasterWindow, dest_position: BlitPosition) {
-        // Optimization for blitting something completely over a chunk
-        if source.width == self.size
-            && source.height == self.size
-            && source.backing.len() == self.pixels.len()
-        {
-            self.pixels.copy_from_slice(source.backing);
-            return;
-        }
-
+    /// Shrinks a raster window to the sub-window that is contained within
+    /// the current raster chunk. Returns `None` if the resultant window is empty.
+    fn shrink_window_to_contain<'a>(
+        &self,
+        source: &RasterWindow<'a>,
+        dest_position: DrawPosition,
+    ) -> Option<RasterWindow<'a>> {
         let source_top_left_in_dest = self.get_index_from_bounded_position(dest_position);
         let source_bottom_right_in_dest = self.get_index_from_bounded_position(
             dest_position + ((source.width - 1) as i32, (source.height - 1) as i32),
@@ -311,7 +330,7 @@ impl RasterChunk {
             source_bottom_right_in_dest.y_delta > 0 || source_bottom_right_in_dest.x_delta > 0;
         if top_left_past_bottom_right || bottom_right_past_top_left {
             // Source is completely outside of dest
-            return;
+            return None;
         }
 
         let shrink_top = source_top_left_in_dest.y_delta as usize;
@@ -320,11 +339,18 @@ impl RasterChunk {
         let shrink_left = source_top_left_in_dest.x_delta as usize;
         let shrink_right = (-source_bottom_right_in_dest.x_delta) as usize;
 
-        let shrunk_source = source.shrink(shrink_top, shrink_bottom, shrink_left, shrink_right);
+        source.shrink(shrink_top, shrink_bottom, shrink_left, shrink_right)
+    }
 
+    /// Performs an operation on the chunk rows using rows from a window at a specified location.
+    fn perform_row_operations(
+        &mut self,
+        source: &RasterWindow,
+        dest_position: DrawPosition,
+        operation: RowOperation,
+    ) {
         let bounded_top_left = self.bound_position(dest_position);
-
-        if let Some(shrunk_source) = shrunk_source {
+        if let Some(shrunk_source) = self.shrink_window_to_contain(source, dest_position) {
             for row_num in 0..shrunk_source.height {
                 let source_row = shrunk_source.get_row_slice(row_num);
 
@@ -337,10 +363,27 @@ impl RasterChunk {
 
                 if let Some(source_row) = source_row {
                     let dest_slice = &mut self.pixels[start..end + 1];
-                    dest_slice.copy_from_slice(source_row);
+
+                    operation(dest_slice, source_row);
                 }
             }
         }
+    }
+
+    /// Blits a render window onto the raster chunk at `dest_position`.
+    /// If the window at `dest_position` is not contained within the chunk,
+    /// the portion of the destination outside the chunk is ignored.
+    pub fn blit(&mut self, source: &RasterWindow, dest_position: DrawPosition) {
+        // Optimization for blitting something completely over a chunk
+        if source.width == self.size
+            && source.height == self.size
+            && source.backing.len() == self.pixels.len()
+        {
+            self.pixels.copy_from_slice(source.backing);
+            return;
+        }
+
+        self.perform_row_operations(source, dest_position, |d, s| d.copy_from_slice(s));
     }
 }
 
@@ -482,6 +525,17 @@ mod tests {
         expected_raster_chunk.pixels[3 * 8 + 3] = colors::blue();
 
         assert_eq!(expected_raster_chunk.pixels, raster_chunk.pixels);
+    }
+
+    #[test]
+    fn test_complete_blit() {
+        let mut raster_chunk = RasterChunk::new_fill(colors::red(), 8);
+
+        let blit_source = RasterChunk::new_fill(colors::blue(), 8);
+
+        raster_chunk.blit(&(&blit_source).into(), (2, 2).into());
+
+        assert_eq!(raster_chunk.pixels, blit_source.pixels);
     }
 
     #[test]
