@@ -12,14 +12,15 @@ use super::pixels::{colors, Pixel};
 use super::position::{DrawPosition, PixelPosition};
 
 /// A square collection of pixels.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RasterChunk {
     pixels: Box<[Pixel]>,
-    size: usize,
+    width: usize,
+    height: usize,
 }
 
 /// A reference to a sub-rectangle of a raster chunk.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct RasterWindow<'a> {
     backing: &'a [Pixel],
     top_left: PixelPosition,
@@ -32,8 +33,8 @@ pub struct RasterWindow<'a> {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct BoundedIndex {
     index: usize,
-    x_delta: i32,
-    y_delta: i32,
+    x_delta: i64,
+    y_delta: i64,
 }
 
 /// A value that can be indexed by `PixelPosition`, providing pixels. It must make sense to get slices representing rows from the value.
@@ -47,20 +48,6 @@ trait IndexableByPosition {
     fn bound_position(&self, position: DrawPosition) -> PixelPosition;
     /// Returns a slice representing a row of pixels.
     fn get_row_slice(&self, row_num: usize) -> Option<&[Pixel]>;
-}
-
-/// Converts the entire chunk into a window.
-impl<'a> Into<RasterWindow<'a>> for &'a RasterChunk {
-    fn into(self) -> RasterWindow<'a> {
-        RasterWindow {
-            backing: self.pixels.as_ref(),
-            top_left: (0, 0).into(),
-            width: self.size,
-            height: self.size,
-            backing_height: self.size,
-            backing_width: self.size,
-        }
-    }
 }
 
 /// Failure to create a `RasterWindow` from a slice due to incompatible sizing.
@@ -89,15 +76,15 @@ impl<'a> RasterWindow<'a> {
         width: usize,
         height: usize,
     ) -> Option<RasterWindow<'a>> {
-        if top_left.0 .0 + width > chunk.size {
+        if top_left.0 .0 + width > chunk.width {
             None
-        } else if top_left.0 .1 + height > chunk.size {
+        } else if top_left.0 .1 + height > chunk.height {
             None
         } else {
             Some(RasterWindow {
                 backing: chunk.pixels.as_ref(),
-                backing_height: chunk.size,
-                backing_width: chunk.size,
+                backing_height: chunk.height,
+                backing_width: chunk.width,
                 top_left,
                 width,
                 height,
@@ -160,6 +147,28 @@ impl<'a> RasterWindow<'a> {
             backing_width: self.backing_width,
         })
     }
+
+    /// Creates a raster chunk by copying the data in a window.
+    pub fn to_chunk(&self) -> RasterChunk {
+        let mut rect = Vec::<Pixel>::with_capacity(self.width * self.height);
+
+        for row in 0..self.height {
+            for column in 0..self.width {
+                let source_position = (column, row);
+
+                let source_index = self
+                    .get_index_from_position(source_position.into())
+                    .unwrap();
+                rect.push(self.backing[source_index]);
+            }
+        }
+
+        RasterChunk {
+            pixels: rect.into_boxed_slice(),
+            width: self.width,
+            height: self.height,
+        }
+    }
 }
 
 fn translate_rect_position_to_flat_index(
@@ -170,9 +179,9 @@ fn translate_rect_position_to_flat_index(
     let offset_from_row = position.1 * width;
     let offset_from_column = position.0;
 
-    if position.0 >= height {
+    if position.0 >= width {
         None
-    } else if offset_from_column >= width {
+    } else if position.1 >= height {
         None
     } else {
         Some(offset_from_row + offset_from_column)
@@ -213,8 +222,8 @@ impl<'a> IndexableByPosition for RasterWindow<'a> {
 
         BoundedIndex {
             index,
-            x_delta: TryInto::<i32>::try_into(bounded_position.0 .0).unwrap() - position.0 .0,
-            y_delta: TryInto::<i32>::try_into(bounded_position.0 .1).unwrap() - position.0 .1,
+            x_delta: TryInto::<i64>::try_into(bounded_position.0 .0).unwrap() - position.0 .0,
+            y_delta: TryInto::<i64>::try_into(bounded_position.0 .1).unwrap() - position.0 .1,
         }
     }
 
@@ -228,12 +237,12 @@ impl<'a> IndexableByPosition for RasterWindow<'a> {
 
 impl IndexableByPosition for RasterChunk {
     fn get_index_from_position(&self, position: PixelPosition) -> Option<usize> {
-        translate_rect_position_to_flat_index(position.0, self.size, self.size)
+        translate_rect_position_to_flat_index(position.0, self.width, self.height)
     }
 
     fn get_row_slice(&self, row_num: usize) -> Option<&[Pixel]> {
         let row_start = self.get_index_from_position((0, row_num).into())?;
-        let row_end = self.get_index_from_position((self.size - 1, row_num).into())?;
+        let row_end = self.get_index_from_position((self.width - 1, row_num).into())?;
 
         Some(&self.pixels[row_start..row_end + 1])
     }
@@ -241,20 +250,21 @@ impl IndexableByPosition for RasterChunk {
     fn get_index_from_bounded_position(&self, position: DrawPosition) -> BoundedIndex {
         let bounded_position = self.bound_position(position);
 
-        let index = translate_rect_position_to_flat_index(bounded_position.0, self.size, self.size)
-            .unwrap();
+        let index =
+            translate_rect_position_to_flat_index(bounded_position.0, self.width, self.height)
+                .unwrap();
 
         BoundedIndex {
             index,
-            x_delta: TryInto::<i32>::try_into(bounded_position.0 .0).unwrap() - position.0 .0,
-            y_delta: TryInto::<i32>::try_into(bounded_position.0 .1).unwrap() - position.0 .1,
+            x_delta: TryInto::<i64>::try_into(bounded_position.0 .0).unwrap() - position.0 .0,
+            y_delta: TryInto::<i64>::try_into(bounded_position.0 .1).unwrap() - position.0 .1,
         }
     }
 
     fn bound_position(&self, position: DrawPosition) -> PixelPosition {
         PixelPosition((
-            (TryInto::<usize>::try_into(position.0 .0.max(0)).unwrap()).min(self.size - 1),
-            (TryInto::<usize>::try_into(position.0 .1.max(0)).unwrap()).min(self.size - 1),
+            (TryInto::<usize>::try_into(position.0 .0.max(0)).unwrap()).min(self.width - 1),
+            (TryInto::<usize>::try_into(position.0 .1.max(0)).unwrap()).min(self.height - 1),
         ))
     }
 }
@@ -263,56 +273,80 @@ type RowOperation = fn(&mut [Pixel], &[Pixel]) -> ();
 
 impl RasterChunk {
     /// Create a new raster chunk filled in with a pixel value.
-    pub fn new_fill(pixel: Pixel, size: usize) -> RasterChunk {
-        let pixels = vec![pixel; size * size];
+    pub fn new_fill(pixel: Pixel, width: usize, height: usize) -> RasterChunk {
+        let pixels = vec![pixel; width * height];
 
         RasterChunk {
             pixels: pixels.into_boxed_slice(),
-            size,
+            width,
+            height,
         }
     }
 
     /// Create a new raster chunk where each pixel value is filled in by a closure given the pixel's location.
-    pub fn new_fill_dynamic(f: fn(PixelPosition) -> Pixel, size: usize) -> RasterChunk {
-        let mut pixels = vec![colors::transparent(); size * size];
+    pub fn new_fill_dynamic(
+        f: fn(PixelPosition) -> Pixel,
+        width: usize,
+        height: usize,
+    ) -> RasterChunk {
+        let mut pixels = vec![colors::transparent(); width * height];
 
-        for row in 0..size {
-            for column in 0..size {
-                pixels[row * size + column] = f(PixelPosition::from((row, column)));
+        for row in 0..width {
+            for column in 0..height {
+                pixels[row * width + column] = f(PixelPosition::from((row, column)));
             }
         }
 
         RasterChunk {
             pixels: pixels.into_boxed_slice(),
-            size,
+            width,
+            height,
         }
     }
 
     /// Create a new raster chunk that is completely transparent.
-    pub fn new(size: usize) -> RasterChunk {
-        RasterChunk::new_fill(colors::transparent(), size)
+    pub fn new(width: usize, height: usize) -> RasterChunk {
+        RasterChunk::new_fill(colors::transparent(), width, height)
     }
 
     /// Derive a sub-chunk from a raster chunk. If the sub-chunk positioned at `position` is not fully contained by the source chunk,
     /// any regions outside the source chunk will be filled in as transparent.
-    pub fn clone_square(&self, position: (usize, usize), size: usize) -> RasterChunk {
-        let mut square = Vec::<Pixel>::with_capacity(size * size);
+    pub fn clone_square(
+        &self,
+        position: (usize, usize),
+        width: usize,
+        height: usize,
+    ) -> RasterChunk {
+        let mut rect = Vec::<Pixel>::with_capacity(width * height);
 
-        for column in 0..size {
-            for row in 0..size {
-                let source_position = (row + position.0, column + position.1);
+        for row in 0..height {
+            for column in 0..width {
+                let source_position = (column + position.0, row + position.1);
 
                 if let Some(source_index) = self.get_index_from_position(source_position.into()) {
-                    square.push(self.pixels[source_index]);
+                    rect.push(self.pixels[source_index]);
                 } else {
-                    square.push(colors::transparent());
+                    rect.push(colors::transparent());
                 }
             }
         }
 
         RasterChunk {
-            pixels: square.into_boxed_slice(),
-            size,
+            pixels: rect.into_boxed_slice(),
+            width,
+            height,
+        }
+    }
+
+    /// Takes the whole chunk as a raster window.
+    pub fn as_window<'a>(&'a self) -> RasterWindow<'a> {
+        RasterWindow {
+            backing: self.pixels.as_ref(),
+            top_left: (0, 0).into(),
+            width: self.width,
+            height: self.height,
+            backing_height: self.height,
+            backing_width: self.width,
         }
     }
 
@@ -323,9 +357,13 @@ impl RasterChunk {
         source: &RasterWindow<'a>,
         dest_position: DrawPosition,
     ) -> Option<RasterWindow<'a>> {
+        if source.width == 0 || source.height == 0 {
+            return None;
+        }
+
         let source_top_left_in_dest = self.get_index_from_bounded_position(dest_position);
 
-        let bottom_right: (i32, i32) = (
+        let bottom_right: (i64, i64) = (
             (source.width - 1).try_into().unwrap(),
             (source.height - 1).try_into().unwrap(),
         );
@@ -382,9 +420,9 @@ impl RasterChunk {
     /// If the window at `dest_position` is not contained within the chunk,
     /// the portion of the destination outside the chunk is ignored.
     pub fn blit(&mut self, source: &RasterWindow, dest_position: DrawPosition) {
-        // Optimization for blitting something completely over a chunk
-        if source.width == self.size
-            && source.height == self.size
+        // Optimization for blittig something completely over a chunk
+        if source.width == self.width
+            && source.height == self.height
             && source.backing.len() == self.pixels.len()
         {
             self.pixels.copy_from_slice(source.backing);
@@ -404,14 +442,20 @@ impl RasterChunk {
             }
         });
     }
+
+    /// The dimensions of a raster chunk in `(width, height)` format.
+    pub fn dimensions(&self) -> (usize, usize) {
+        (self.width, self.height)
+    }
 }
 
 mod tests {
+    #[cfg(test)]
     use super::*;
 
     #[test]
     fn test_position_translation() {
-        let raster_chunk = RasterChunk::new(256);
+        let raster_chunk = RasterChunk::new(256, 256);
 
         assert_eq!(Some(0), raster_chunk.get_index_from_position((0, 0).into()));
         assert_eq!(
@@ -442,7 +486,7 @@ mod tests {
 
     #[test]
     fn test_bounded_position_translation() {
-        let raster_chunk = RasterChunk::new(256);
+        let raster_chunk = RasterChunk::new(256, 256);
 
         assert_eq!(
             BoundedIndex {
@@ -501,7 +545,7 @@ mod tests {
 
     #[test]
     fn test_getting_row_slices() {
-        let mut raster_chunk = RasterChunk::new(5);
+        let mut raster_chunk = RasterChunk::new(5, 5);
 
         raster_chunk.pixels[5 + 1] = colors::blue();
         raster_chunk.pixels[5 + 2] = colors::blue();
@@ -530,13 +574,13 @@ mod tests {
 
     #[test]
     fn test_blitting() {
-        let mut raster_chunk = RasterChunk::new_fill(colors::red(), 8);
+        let mut raster_chunk = RasterChunk::new_fill(colors::red(), 8, 8);
 
-        let blit_source = RasterChunk::new_fill(colors::blue(), 2);
+        let blit_source = RasterChunk::new_fill(colors::blue(), 2, 2);
 
-        raster_chunk.blit(&(&blit_source).into(), (2, 2).into());
+        raster_chunk.blit(&blit_source.as_window(), (2, 2).into());
 
-        let mut expected_raster_chunk = RasterChunk::new_fill(colors::red(), 8);
+        let mut expected_raster_chunk = RasterChunk::new_fill(colors::red(), 8, 8);
 
         expected_raster_chunk.pixels[2 * 8 + 2] = colors::blue();
         expected_raster_chunk.pixels[2 * 8 + 3] = colors::blue();
@@ -548,22 +592,22 @@ mod tests {
 
     #[test]
     fn test_complete_blit() {
-        let mut raster_chunk = RasterChunk::new_fill(colors::red(), 8);
+        let mut raster_chunk = RasterChunk::new_fill(colors::red(), 8, 8);
 
-        let blit_source = RasterChunk::new_fill(colors::blue(), 8);
+        let blit_source = RasterChunk::new_fill(colors::blue(), 8, 8);
 
-        raster_chunk.blit(&(&blit_source).into(), (2, 2).into());
+        raster_chunk.blit(&blit_source.as_window(), (2, 2).into());
 
         assert_eq!(raster_chunk.pixels, blit_source.pixels);
     }
 
     #[test]
     fn test_blit_into_smaller() {
-        let mut raster_chunk = RasterChunk::new(1);
+        let mut raster_chunk = RasterChunk::new(1, 1);
 
-        let blit_source = RasterChunk::new_fill(colors::blue(), 2);
+        let blit_source = RasterChunk::new_fill(colors::blue(), 2, 2);
 
-        raster_chunk.blit(&(&blit_source).into(), (0, 0).into());
+        raster_chunk.blit(&blit_source.as_window(), (0, 0).into());
 
         assert_eq!(raster_chunk.pixels[0], colors::blue());
     }
@@ -571,13 +615,13 @@ mod tests {
     /// Test that blits that are partially/totally outside the chunk work as expected.
     #[test]
     fn test_blit_overflow() {
-        let mut raster_chunk = RasterChunk::new_fill(colors::red(), 8);
+        let mut raster_chunk = RasterChunk::new_fill(colors::red(), 8, 8);
 
-        let blit_source = RasterChunk::new_fill(colors::blue(), 2);
+        let blit_source = RasterChunk::new_fill(colors::blue(), 2, 2);
 
-        raster_chunk.blit(&(&blit_source).into(), (7, 7).into());
+        raster_chunk.blit(&blit_source.as_window(), (7, 7).into());
 
-        let mut expected_raster_chunk = RasterChunk::new_fill(colors::red(), 8);
+        let mut expected_raster_chunk = RasterChunk::new_fill(colors::red(), 8, 8);
 
         expected_raster_chunk.pixels[7 * 8 + 7] = colors::blue();
 
@@ -586,32 +630,32 @@ mod tests {
 
     #[test]
     fn test_noop_blit() {
-        let mut raster_chunk = RasterChunk::new_fill(colors::red(), 8);
+        let mut raster_chunk = RasterChunk::new_fill(colors::red(), 8, 8);
 
-        let expected_raster_chunk = RasterChunk::new_fill(colors::red(), 8);
+        let expected_raster_chunk = RasterChunk::new_fill(colors::red(), 8, 8);
 
-        let blit_source = RasterChunk::new_fill(colors::blue(), 2);
+        let blit_source = RasterChunk::new_fill(colors::blue(), 2, 2);
 
-        raster_chunk.blit(&(&blit_source).into(), (-3, -3).into());
+        raster_chunk.blit(&blit_source.as_window(), (-3, -3).into());
         assert_eq!(expected_raster_chunk.pixels, raster_chunk.pixels);
 
-        raster_chunk.blit(&(&blit_source).into(), (8, 8).into());
+        raster_chunk.blit(&blit_source.as_window(), (8, 8).into());
         assert_eq!(expected_raster_chunk.pixels, raster_chunk.pixels);
 
-        raster_chunk.blit(&(&blit_source).into(), (-3, 0).into());
+        raster_chunk.blit(&blit_source.as_window(), (-3, 0).into());
         assert_eq!(expected_raster_chunk.pixels, raster_chunk.pixels);
 
-        raster_chunk.blit(&(&blit_source).into(), (8, 0).into());
+        raster_chunk.blit(&blit_source.as_window(), (8, 0).into());
         assert_eq!(expected_raster_chunk.pixels, raster_chunk.pixels);
     }
 
     #[test]
     fn test_window_shrink() {
-        let mut raster_chunk = RasterChunk::new_fill(colors::red(), 8);
+        let mut raster_chunk = RasterChunk::new_fill(colors::red(), 8, 8);
 
         raster_chunk.pixels[3 * 8 + 4] = colors::blue();
 
-        let raster_window: RasterWindow<'_> = (&raster_chunk).into();
+        let raster_window: RasterWindow<'_> = raster_chunk.as_window();
 
         let shrunk = raster_window.shrink(1, 1, 1, 1).unwrap();
         let expected_shrunk = RasterWindow::new(&raster_chunk, (1, 1).into(), 6, 6).unwrap();
@@ -633,11 +677,11 @@ mod tests {
 
     #[test]
     fn test_easy_compositing() {
-        let mut raster_chunk = RasterChunk::new_fill(colors::red(), 8);
+        let mut raster_chunk = RasterChunk::new_fill(colors::red(), 8, 8);
 
-        let draw_source = RasterChunk::new_fill(colors::blue(), 8);
+        let draw_source = RasterChunk::new_fill(colors::blue(), 8, 8);
 
-        raster_chunk.composite_over(&(&draw_source).into(), (0, 0).into());
+        raster_chunk.composite_over(&draw_source.as_window(), (0, 0).into());
 
         let blended_pixel = Pixel::new_rgb(0, 0, 255);
 
@@ -648,11 +692,11 @@ mod tests {
 
     #[test]
     fn test_medium_compositing() {
-        let mut raster_chunk = RasterChunk::new_fill(Pixel::new_rgb(128, 128, 128), 8);
+        let mut raster_chunk = RasterChunk::new_fill(Pixel::new_rgb(128, 128, 128), 8, 8);
 
-        let draw_source = RasterChunk::new_fill(Pixel::new_rgba(255, 255, 255, 128), 8);
+        let draw_source = RasterChunk::new_fill(Pixel::new_rgba(255, 255, 255, 128), 8, 8);
 
-        raster_chunk.composite_over(&(&draw_source).into(), (0, 0).into());
+        raster_chunk.composite_over(&draw_source.as_window(), (0, 0).into());
 
         let blended_pixel = Pixel::new_rgb(191, 191, 191);
 
@@ -681,9 +725,10 @@ mod tests {
                 }
             },
             4,
+            4,
         );
 
-        let mut expected_checkerboard_chunk = RasterChunk::new_fill(colors::blue(), 4);
+        let mut expected_checkerboard_chunk = RasterChunk::new_fill(colors::blue(), 4, 4);
 
         expected_checkerboard_chunk.pixels[0] = colors::red();
         expected_checkerboard_chunk.pixels[2] = colors::red();
@@ -714,9 +759,10 @@ mod tests {
                 )
             },
             3,
+            3,
         );
 
-        let mut expected_gradient_chunk = RasterChunk::new(3);
+        let mut expected_gradient_chunk = RasterChunk::new(3, 3);
 
         expected_gradient_chunk.pixels[8] = Pixel::new_rgb_norm(1.0, 0.0, 1.0);
         expected_gradient_chunk.pixels[7] = Pixel::new_rgb_norm(2.0 / 3.0, 0.0, 1.0);
@@ -735,8 +781,24 @@ mod tests {
             .iter()
             .zip(expected_gradient_chunk.pixels.iter())
         {
-            println!("{:?}, {:?}", pixel.as_rgba(), expected_pixel.as_rgba());
             assert!(pixel.is_close(expected_pixel, 2));
         }
+    }
+
+    #[test]
+    fn test_window_to_chunk() {
+        let mut raster_chunk = RasterChunk::new_fill(colors::red(), 3, 4);
+
+        raster_chunk.pixels[3 + 2] = colors::blue();
+
+        let raster_window = RasterWindow::new(&raster_chunk, (1, 1).into(), 2, 2).unwrap();
+
+        let new_chunk = raster_window.to_chunk();
+
+        let mut expected_chunk = RasterChunk::new_fill(colors::red(), 2, 2);
+
+        expected_chunk.pixels[1] = colors::blue();
+
+        assert_eq!(new_chunk, expected_chunk);
     }
 }

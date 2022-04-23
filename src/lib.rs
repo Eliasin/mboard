@@ -1,8 +1,9 @@
-#![feature(let_chains)]
+#![feature(int_roundings)]
 
 use wasm_bindgen::prelude::*;
 use web_sys::console;
 
+pub mod canvas;
 pub mod raster;
 
 // When the `wee_alloc` feature is enabled, this uses `wee_alloc` as the global
