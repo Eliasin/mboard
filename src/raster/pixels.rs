@@ -102,6 +102,19 @@ impl Pixel {
             && b.abs_diff(o_b) <= delta
             && a.abs_diff(o_a) <= delta
     }
+
+    /// Returns the euclidean distance from one pixel to another.
+    pub fn eu_distance(&self, other: &Pixel) -> f32 {
+        let (r_a, g_a, b_a, a_a) = self.as_norm_rgba();
+        let (r_b, g_b, b_b, a_b) = other.as_norm_rgba();
+
+        let r = (r_a - r_b).powf(2.0);
+        let g = (g_a - g_b).powf(2.0);
+        let b = (b_a - b_b).powf(2.0);
+        let a = (a_a - a_b).powf(2.0);
+
+        f32::sqrt(r + g + b + a)
+    }
 }
 
 /// Common color definitions.
@@ -123,9 +136,22 @@ pub mod colors {
     pub fn transparent() -> Pixel {
         Pixel::new_rgba(0, 0, 0, 0)
     }
+
+    pub fn black() -> Pixel {
+        Pixel::new_rgb(0, 0, 0)
+    }
+
+    pub fn white() -> Pixel {
+        Pixel::new_rgb(255, 255, 255)
+    }
+
+    pub fn grey() -> Pixel {
+        Pixel::new_rgb(128, 128, 128)
+    }
 }
 
 mod tests {
+    #[cfg(test)]
     use super::*;
 
     #[test]

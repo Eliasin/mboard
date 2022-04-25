@@ -1,3 +1,3 @@
 mod canvas;
 
-pub use canvas::{Camera, CanvasRect};
+pub use canvas::{CanvasRect, CanvasView};

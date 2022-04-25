@@ -7,6 +7,7 @@
 //! chunk or part of a `Pixel` slice.
 
 use std::convert::TryInto;
+use std::fmt::Display;
 
 use super::pixels::{colors, Pixel};
 use super::position::{DrawPosition, PixelPosition};
@@ -65,6 +66,56 @@ impl std::fmt::Display for InvalidPixelSliceSize {
             "cannot make ({}, {}) from buffer of size {}",
             self.desired_width, self.desired_height, self.buffer_size
         )
+    }
+}
+
+fn get_color_character_for_pixel(p: &Pixel) -> &'static str {
+    let mut color_characters = vec![
+        (colors::red(), "r"),
+        (colors::blue(), "b"),
+        (colors::green(), "g"),
+        (colors::black(), "B"),
+        (colors::white(), "w"),
+        (colors::transparent(), " "),
+    ];
+
+    color_characters.sort_by(|(a, _), (b, _)| {
+        let d_a = p.eu_distance(a);
+        let d_b = p.eu_distance(b);
+
+        d_a.partial_cmp(&d_b).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    color_characters.get(0).unwrap().1
+}
+
+fn display_raster_row(row: &[Pixel]) -> String {
+    let mut s = String::new();
+
+    for p in row {
+        s += get_color_character_for_pixel(p);
+    }
+
+    s
+}
+
+impl<'a> Display for RasterWindow<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut s = String::new();
+        for row_num in 0..self.height {
+            let row_slice = self.get_row_slice(row_num).unwrap();
+            s += "|";
+            s += display_raster_row(row_slice).as_str();
+            s += "|\n";
+        }
+
+        write!(f, "{}", s)
+    }
+}
+
+impl Display for RasterChunk {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.as_window().fmt(f)
     }
 }
 
@@ -800,5 +851,22 @@ mod tests {
         expected_chunk.pixels[1] = colors::blue();
 
         assert_eq!(new_chunk, expected_chunk);
+    }
+
+    #[test]
+    fn test_new_window_edge_cases() {
+        let raster_chunk = RasterChunk::new(10, 10);
+
+        let raster_window_close = RasterWindow::new(&raster_chunk, (1, 1).into(), 9, 9);
+
+        assert!(raster_window_close.is_some());
+
+        let raster_window_over = RasterWindow::new(&raster_chunk, (1, 1).into(), 9, 10);
+
+        assert!(raster_window_over.is_none());
+
+        let raster_window_over_both = RasterWindow::new(&raster_chunk, (1, 1).into(), 11, 11);
+
+        assert!(raster_window_over_both.is_none());
     }
 }

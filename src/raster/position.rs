@@ -4,7 +4,7 @@
 //!
 //! `DrawPosition` values are allowed to be outside of a collection to support partial drawing of raster data.
 
-use std::ops::Add;
+use std::{convert::TryInto, ops::Add};
 
 /// A position within a 2d collection of pixels.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -55,5 +55,11 @@ impl From<(i64, i64)> for DrawPosition {
 impl From<(usize, usize)> for PixelPosition {
     fn from(p: (usize, usize)) -> Self {
         PixelPosition(p)
+    }
+}
+
+impl From<PixelPosition> for DrawPosition {
+    fn from(p: PixelPosition) -> Self {
+        DrawPosition((p.0 .0.try_into().unwrap(), p.0 .1.try_into().unwrap()))
     }
 }
