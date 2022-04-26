@@ -9,8 +9,29 @@
 use std::convert::TryInto;
 use std::fmt::Display;
 
+use wasm_bindgen::prelude::wasm_bindgen;
+
 use super::pixels::{colors, Pixel};
 use super::position::{DrawPosition, PixelPosition};
+
+#[wasm_bindgen(getter_with_clone)]
+pub struct RasterProduct {
+    pub pixels: Vec<u32>,
+    pub width: usize,
+    pub height: usize,
+}
+
+impl From<RasterChunk> for RasterProduct {
+    fn from(r: RasterChunk) -> Self {
+        let pixels = r.pixels.iter().map(|p| p.0).collect();
+
+        RasterProduct {
+            pixels,
+            width: r.width,
+            height: r.height,
+        }
+    }
+}
 
 /// A square collection of pixels.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,9 +148,9 @@ impl<'a> RasterWindow<'a> {
         width: usize,
         height: usize,
     ) -> Option<RasterWindow<'a>> {
-        if top_left.0 .0 + width > chunk.width {
-            None
-        } else if top_left.0 .1 + height > chunk.height {
+        let over_width = top_left.0 .0 + width > chunk.width;
+        let over_height = top_left.0 .1 + height > chunk.height;
+        if over_width || over_height {
             None
         } else {
             Some(RasterWindow {
@@ -230,9 +251,10 @@ fn translate_rect_position_to_flat_index(
     let offset_from_row = position.1 * width;
     let offset_from_column = position.0;
 
-    if position.0 >= width {
-        None
-    } else if position.1 >= height {
+    let over_width = position.0 >= width;
+    let over_height = position.1 >= height;
+
+    if over_width || over_height {
         None
     } else {
         Some(offset_from_row + offset_from_column)
@@ -390,7 +412,7 @@ impl RasterChunk {
     }
 
     /// Takes the whole chunk as a raster window.
-    pub fn as_window<'a>(&'a self) -> RasterWindow<'a> {
+    pub fn as_window(&self) -> RasterWindow {
         RasterWindow {
             backing: self.pixels.as_ref(),
             top_left: (0, 0).into(),
@@ -452,7 +474,7 @@ impl RasterChunk {
                 let source_row = shrunk_source.get_row_slice(row_num);
 
                 let start = self
-                    .get_index_from_position(bounded_top_left + (0 as usize, row_num))
+                    .get_index_from_position(bounded_top_left + (0_usize, row_num))
                     .unwrap();
                 let end = self
                     .get_index_from_position(bounded_top_left + (shrunk_source.width - 1, row_num))

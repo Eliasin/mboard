@@ -1,7 +1,7 @@
 #![feature(int_roundings)]
 
+use raster::{chunks::RasterProduct, shapes::Circle, shapes::RasterPolygon};
 use wasm_bindgen::prelude::*;
-use web_sys::console;
 
 pub mod canvas;
 pub mod raster;
@@ -22,8 +22,19 @@ pub fn main_js() -> Result<(), JsValue> {
     #[cfg(debug_assertions)]
     console_error_panic_hook::set_once();
 
-    // Your code goes here!
-    console::log_1(&JsValue::from_str("Hello world!"));
-
     Ok(())
+}
+
+#[wasm_bindgen]
+pub fn get_circle() -> RasterProduct {
+    let circle = Circle::new(5.0);
+
+    circle.rasterize().into()
+}
+
+#[wasm_bindgen]
+pub fn get_circle_pixels() -> Vec<u32> {
+    let circle = Circle::new(5.0);
+
+    RasterProduct::from(circle.rasterize()).pixels
 }

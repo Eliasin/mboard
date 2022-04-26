@@ -3,7 +3,7 @@
 use std::convert::TryInto;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Pixel(u32);
+pub struct Pixel(pub u32);
 
 impl Pixel {
     pub fn new_rgb(r: u8, g: u8, b: u8) -> Pixel {

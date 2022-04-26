@@ -105,15 +105,13 @@ impl RasterLayer {
             bottom_right_in_chunk.1.try_into().unwrap(),
         ));
 
-        let chunk_rect = ChunkRect {
+        ChunkRect {
             top_left_chunk,
             chunk_height,
             chunk_width,
             top_left_in_chunk,
             bottom_right_in_chunk,
-        };
-
-        chunk_rect
+        }
     }
 
     fn find_chunk_rect_in_view(&self, view: &CanvasView) -> ChunkRect {
@@ -137,7 +135,7 @@ impl RasterLayer {
 
     fn reduce_chunk_rect<F>(&mut self, r: &mut F, chunk_rect: ChunkRect)
     where
-        F: FnMut(&mut RasterChunk, ChunkRectPosition) -> (),
+        F: FnMut(&mut RasterChunk, ChunkRectPosition),
     {
         for y_offset in 0..chunk_rect.chunk_height {
             for x_offset in 0..chunk_rect.chunk_width {
@@ -204,7 +202,7 @@ impl RasterLayer {
     }
 
     pub fn rasterize(&mut self, view: &CanvasView) -> RasterChunk {
-        let chunk_rect = self.find_chunk_rect_in_view(&view);
+        let chunk_rect = self.find_chunk_rect_in_view(view);
 
         let mut raster_result = RasterChunk::new(view.width, view.height);
         let chunk_size = self.chunk_size;
