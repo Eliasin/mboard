@@ -1,7 +1,2 @@
-node_modules
-/dist
 /target
-/pkg
-/wasm-pack.log
-
-.log/
+/Cargo.lock

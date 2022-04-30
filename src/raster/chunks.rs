@@ -9,29 +9,8 @@
 use std::convert::TryInto;
 use std::fmt::Display;
 
-use wasm_bindgen::prelude::wasm_bindgen;
-
 use super::pixels::{colors, Pixel};
 use super::position::{DrawPosition, PixelPosition};
-
-#[wasm_bindgen(getter_with_clone)]
-pub struct RasterProduct {
-    pub pixels: Vec<u32>,
-    pub width: usize,
-    pub height: usize,
-}
-
-impl From<RasterChunk> for RasterProduct {
-    fn from(r: RasterChunk) -> Self {
-        let pixels = r.pixels.iter().map(|p| p.0).collect();
-
-        RasterProduct {
-            pixels,
-            width: r.width,
-            height: r.height,
-        }
-    }
-}
 
 /// A square collection of pixels.
 #[derive(Debug, Clone, PartialEq, Eq)]
