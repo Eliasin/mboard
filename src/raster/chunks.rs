@@ -32,14 +32,14 @@ pub struct RasterWindow<'a> {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-struct BoundedIndex {
+pub struct BoundedIndex {
     index: usize,
     x_delta: i64,
     y_delta: i64,
 }
 
 /// A value that can be indexed by `PixelPosition`, providing pixels. It must make sense to get slices representing rows from the value.
-trait IndexableByPosition {
+pub trait IndexableByPosition {
     /// Returns an index to the backing collection that corresponds to the position supplied.
     fn get_index_from_position(&self, position: PixelPosition) -> Option<usize>;
     /// Returns a bounded index to the backing collection along with the shift applied to bound the
@@ -498,6 +498,18 @@ impl RasterChunk {
     /// The dimensions of a raster chunk in `(width, height)` format.
     pub fn dimensions(&self) -> (usize, usize) {
         (self.width, self.height)
+    }
+
+    pub fn pixels(&self) -> &Box<[Pixel]> {
+        &self.pixels
+    }
+
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    pub fn height(&self) -> usize {
+        self.height
     }
 }
 

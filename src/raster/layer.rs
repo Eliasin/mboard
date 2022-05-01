@@ -3,7 +3,7 @@ use super::{
     pixels::Pixel,
     position::{DrawPosition, PixelPosition},
 };
-use crate::canvas::{CanvasRect, CanvasView};
+use crate::canvas::{CanvasRect, CanvasView, Layer};
 use std::{
     collections::{hash_map::Entry, HashMap},
     convert::TryInto,
@@ -201,7 +201,39 @@ impl RasterLayer {
         }
     }
 
-    pub fn rasterize(&mut self, view: &CanvasView) -> RasterChunk {
+    /// Performs a raster canvas action, returning the canvas rect that
+    /// has been altered by it.
+    pub fn perform_action(&mut self, action: RasterCanvasAction) -> Option<CanvasRect> {
+        use RasterCanvasAction::*;
+        match action {
+            FillRect(canvas_rect, pixel) => {
+                let chunk_rect = self.find_chunk_rect_in_canvas_rect(canvas_rect);
+
+                let mut writer =
+                    |raster_chunk: &mut RasterChunk, chunk_rect_position: ChunkRectPosition| {
+                        let ChunkRectPosition {
+                            top_left_in_chunk,
+                            width,
+                            height,
+                            x_offset: _,
+                            y_offset: _,
+                        } = chunk_rect_position;
+
+                        let draw_chunk = RasterChunk::new_fill(pixel, width, height);
+
+                        raster_chunk.blit(&draw_chunk.as_window(), top_left_in_chunk.into());
+                    };
+
+                self.reduce_chunk_rect(&mut writer, chunk_rect);
+
+                Some(canvas_rect)
+            }
+        }
+    }
+}
+
+impl Layer for RasterLayer {
+    fn rasterize(&mut self, view: &CanvasView) -> RasterChunk {
         let chunk_rect = self.find_chunk_rect_in_view(view);
 
         let mut raster_result = RasterChunk::new(view.width, view.height);
@@ -231,36 +263,6 @@ impl RasterLayer {
         self.reduce_chunk_rect(&mut rasterizer, chunk_rect);
 
         raster_result
-    }
-
-    /// Performs a raster canvas action, returning the canvas rect that
-    /// has been altered by it.
-    pub fn perform_action(&mut self, action: RasterCanvasAction) -> Option<CanvasRect> {
-        use RasterCanvasAction::*;
-        match action {
-            FillRect(canvas_rect, pixel) => {
-                let chunk_rect = self.find_chunk_rect_in_canvas_rect(canvas_rect);
-
-                let mut writer =
-                    |raster_chunk: &mut RasterChunk, chunk_rect_position: ChunkRectPosition| {
-                        let ChunkRectPosition {
-                            top_left_in_chunk,
-                            width,
-                            height,
-                            x_offset: _,
-                            y_offset: _,
-                        } = chunk_rect_position;
-
-                        let draw_chunk = RasterChunk::new_fill(pixel, width, height);
-
-                        raster_chunk.blit(&draw_chunk.as_window(), top_left_in_chunk.into());
-                    };
-
-                self.reduce_chunk_rect(&mut writer, chunk_rect);
-
-                Some(canvas_rect)
-            }
-        }
     }
 }
 

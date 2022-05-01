@@ -1,4 +1,5 @@
 use crate::raster::{chunks::RasterChunk, pixels::colors, RasterLayer};
+use enum_dispatch::enum_dispatch;
 
 /// A view positioned relative to a set of layers.
 /// The view has a scale and a width and height, the width and height are in pixel units.
@@ -43,50 +44,88 @@ pub struct CanvasRect {
 }
 
 /// A logical layer in the canvas. Layers can be composited ontop of eachother.
-pub enum Layer {
-    RasterLayer(RasterLayer),
+#[enum_dispatch]
+pub enum LayerImplementation {
+    RasterLayer,
 }
 
-impl Layer {
-    /// Render the portion of the layer visible to the view to a `RenderBuffer`.
-    pub fn rasterize(&mut self, camera: &CanvasView) -> RasterChunk {
-        use Layer::*;
-        match self {
-            RasterLayer(raster) => raster.rasterize(camera),
-        }
-    }
-}
-
-impl From<RasterLayer> for Layer {
-    fn from(l: RasterLayer) -> Self {
-        Layer::RasterLayer(l)
-    }
+#[enum_dispatch(LayerImplementation)]
+pub trait Layer {
+    fn rasterize(&mut self, view: &CanvasView) -> RasterChunk;
 }
 
 /// A collection of layers that can be rendered.
 pub struct Canvas {
-    layers: Vec<Layer>,
+    layers: Vec<LayerImplementation>,
 }
 
 impl Canvas {
-    pub fn render(&mut self, camera: &CanvasView) -> RasterChunk {
-        let mut base = RasterChunk::new_fill(colors::white(), camera.width, camera.height);
+    pub fn new() -> Canvas {
+        Canvas { layers: vec![] }
+    }
+
+    pub fn render(&mut self, view: &CanvasView) -> RasterChunk {
+        let mut base = RasterChunk::new_fill(colors::white(), view.width, view.height);
 
         for layer in &mut self.layers {
-            base.composite_over(&layer.rasterize(camera).as_window(), (0, 0).into());
+            base.composite_over(&layer.rasterize(view).as_window(), (0, 0).into());
         }
 
         base
+    }
+
+    pub fn add_layer(&mut self, layer: LayerImplementation) {
+        self.layers.push(layer);
     }
 }
 
 mod tests {
     #[cfg(test)]
+    use crate::raster::{chunks::IndexableByPosition, Pixel, RasterCanvasAction};
+
+    #[cfg(test)]
     use super::*;
 
     #[test]
     fn test_compositing_rasters() {
+        let mut canvas = Canvas::new();
         let mut red_layer = RasterLayer::new(128);
         let mut blue_layer = RasterLayer::new(128);
+
+        let quarter = CanvasRect {
+            top_left: (0, 0),
+            width: 64,
+            height: 64,
+        };
+        let rect = CanvasRect {
+            top_left: (0, 0),
+            width: 128,
+            height: 128,
+        };
+
+        red_layer.perform_action(RasterCanvasAction::fill_rect(
+            quarter,
+            Pixel::new_rgba(255, 0, 0, 128),
+        ));
+        blue_layer.perform_action(RasterCanvasAction::fill_rect(rect, colors::blue()));
+
+        canvas.add_layer(blue_layer.into());
+        canvas.add_layer(red_layer.into());
+
+        let raster = canvas.render(&CanvasView::new(128, 128));
+
+        let composited_color = Pixel::new_rgba(127, 0, 127, 255);
+
+        for (x, y) in (0..128).zip(0..128) {
+            let position = raster.get_index_from_position((x, y).into()).unwrap();
+            let pixel = raster.pixels()[position];
+
+            println!("{:?}", pixel.as_rgba());
+
+            if x < 64 && y < 64 {
+                assert!(composited_color.is_close(&pixel, 10));
+            } else {
+            }
+        }
     }
 }
