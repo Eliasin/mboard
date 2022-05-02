@@ -88,8 +88,8 @@ impl OvalBuilder {
 
     pub fn build(&self) -> Oval {
         Oval {
-            width: self.width,
-            height: self.height,
+            half_width: self.width,
+            half_height: self.height,
             roughness: self.roughness.unwrap_or(10.0),
             color: self.color.unwrap_or(colors::black()),
         }
@@ -97,52 +97,78 @@ impl OvalBuilder {
 }
 
 pub struct Oval {
-    width: f32,
-    height: f32,
+    half_width: f32,
+    half_height: f32,
     roughness: f32,
     color: Pixel,
 }
 
 impl Oval {
-    pub fn new(width: f32, height: f32) -> Oval {
+    /// Create a new oval with a half width and half height. The rasterization
+    /// may exactly reflect this size to account for antialiasing.
+    pub fn new(half_width: f32, half_height: f32) -> Oval {
         Oval {
-            width,
-            height,
+            half_width,
+            half_height,
             roughness: 10.0,
             color: colors::black(),
         }
     }
 
+    /// Create a new oval that fits in a bounding box, including any
+    /// antialiasing.
+    pub fn new_from_bound(width: u32, height: u32) -> Oval {
+        let size = Oval::size_from_bound(width, height);
+
+        Oval::new(size.0, size.1)
+    }
+
+    /// Create an `Oval` using the builder pattern.
     pub fn build(width: f32, height: f32) -> OvalBuilder {
         OvalBuilder::new(width, height)
     }
 
-    pub fn width(&self) -> f32 {
-        self.width
+    fn size_from_bound(width: u32, height: u32) -> (f32, f32) {
+        let real_width = (width as f32) / (HALF_OVAL_PADDING * 2.0);
+        let real_height = (height as f32) / (HALF_OVAL_PADDING * 2.0);
+
+        (real_width, real_height)
     }
 
-    pub fn height(&self) -> f32 {
-        self.height
+    /// Create an `Oval` using the builder pattern and a bounding box.
+    pub fn build_from_bound(width: u32, height: u32) -> OvalBuilder {
+        let size = Oval::size_from_bound(width, height);
+
+        OvalBuilder::new(size.0, size.1)
+    }
+
+    pub fn half_width(&self) -> f32 {
+        self.half_width
+    }
+
+    pub fn half_height(&self) -> f32 {
+        self.half_height
     }
 }
 
 impl Polygon for Oval {
     fn bounding_box(&self) -> (usize, usize) {
-        let width: usize = (self.width * OVAL_PADDING).ceil() as usize + 1;
-        let height: usize = (self.height * OVAL_PADDING).ceil() as usize + 1;
+        let width: usize = (self.half_width * OVAL_PADDING).ceil() as usize + 1;
+        let height: usize = (self.half_height * OVAL_PADDING).ceil() as usize + 1;
 
         (width, height)
     }
 
     fn inside_proportion(&self, p: &PixelPosition) -> u8 {
         let origin = (
-            self.width * HALF_OVAL_PADDING,
-            self.height * HALF_OVAL_PADDING,
+            self.half_width * HALF_OVAL_PADDING,
+            self.half_height * HALF_OVAL_PADDING,
         );
 
         let (x, y): (f32, f32) = (p.0 .0 as f32 - origin.0, p.0 .1 as f32 - origin.1);
 
-        let dist = f32::sqrt(x.powi(2) / self.width.powi(2) + y.powi(2) / self.height.powi(2));
+        let dist =
+            f32::sqrt(x.powi(2) / self.half_width.powi(2) + y.powi(2) / self.half_height.powi(2));
 
         if dist < 1.0 {
             255
@@ -187,7 +213,7 @@ impl Circle {
     }
 
     pub fn radius(&self) -> f32 {
-        self.oval.width
+        self.oval.half_width
     }
 
     pub fn roughness(&self) -> f32 {

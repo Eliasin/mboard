@@ -305,7 +305,7 @@ impl RasterLayer {
                 Some(canvas_rect)
             }
             FillOval(rect, pixel) => {
-                let oval = Oval::build(rect.width as f32 / 2.0, rect.height as f32 / 2.0)
+                let oval = Oval::build_from_bound(rect.width, rect.height)
                     .color(pixel)
                     .build();
 
