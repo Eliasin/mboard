@@ -113,6 +113,13 @@ impl<'a> Display for RasterWindow<'a> {
     }
 }
 
+#[macro_export]
+macro_rules! assert_raster_eq {
+    ($a:ident, $b:ident) => {
+        assert!($a == $b, "\n{}\n{}", $a, $b)
+    };
+}
+
 impl Display for RasterChunk {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.as_window().fmt(f)
@@ -448,8 +455,38 @@ impl RasterChunk {
         source.shrink(shrink_top, shrink_bottom, shrink_left, shrink_right)
     }
 
-    /// Performs an operation on the chunk rows using rows from a window at a specified location.
-    fn perform_row_operations(
+    /// Performs an operation on the raster chunk row-wise.
+    fn perform_row_operation<F>(
+        &mut self,
+        dest_position: DrawPosition,
+        width: usize,
+        height: usize,
+        operation: &mut F,
+    ) where
+        F: FnMut(&mut [Pixel]),
+    {
+        let bounded_top_left = self.bound_position(dest_position);
+
+        let shrunk_width = width.min(self.width);
+        let shrunk_height = height.min(self.height);
+
+        for row_num in 0..shrunk_height {
+            let start = self
+                .get_index_from_position(bounded_top_left + (0_usize, row_num))
+                .unwrap();
+            let end = self
+                .get_index_from_position(bounded_top_left + (shrunk_width - 1, row_num))
+                .unwrap();
+
+            let dest_slice = &mut self.pixels[start..end + 1];
+            operation(dest_slice);
+        }
+    }
+
+    /// Performs an operation on a `zipped` representation of the source raster window
+    /// and the raster chunk. The operation will be given a `mut` reference to each
+    /// row of the chunk and a shared reference to the corresponding source row.
+    fn perform_zipped_row_operation(
         &mut self,
         source: &RasterWindow,
         dest_position: DrawPosition,
@@ -490,14 +527,26 @@ impl RasterChunk {
             return;
         }
 
-        self.perform_row_operations(source, dest_position, |d, s| d.copy_from_slice(s));
+        self.perform_zipped_row_operation(source, dest_position, |d, s| d.copy_from_slice(s));
+    }
+
+    /// Fills a rect with a specified pixel value, lower memory footprint than creating
+    /// a raster chunk full of a single source pixel to blit.
+    pub fn fill_rect(
+        &mut self,
+        pixel: Pixel,
+        dest_position: DrawPosition,
+        width: usize,
+        height: usize,
+    ) {
+        self.perform_row_operation(dest_position, width, height, &mut |d| d.fill(pixel));
     }
 
     /// Draws a render window onto the raster chunk at `dest_position` using alpha compositing.
     /// If the window at `dest_position` is not contained within the chunk,
     /// the portion of the destination outside the chunk is ignored.
     pub fn composite_over(&mut self, source: &RasterWindow, dest_position: DrawPosition) {
-        self.perform_row_operations(source, dest_position, |d, s| {
+        self.perform_zipped_row_operation(source, dest_position, |d, s| {
             for (pixel_d, pixel_s) in d.iter_mut().zip(s.iter()) {
                 pixel_d.composite_over(pixel_s);
             }
@@ -698,7 +747,7 @@ mod tests {
 
         expected_raster_chunk.pixels[7 * 8 + 7] = colors::blue();
 
-        assert_eq!(expected_raster_chunk.pixels, raster_chunk.pixels);
+        assert_raster_eq!(expected_raster_chunk, raster_chunk);
     }
 
     #[test]
@@ -710,16 +759,16 @@ mod tests {
         let blit_source = RasterChunk::new_fill(colors::blue(), 2, 2);
 
         raster_chunk.blit(&blit_source.as_window(), (-3, -3).into());
-        assert_eq!(expected_raster_chunk.pixels, raster_chunk.pixels);
+        assert_raster_eq!(expected_raster_chunk, raster_chunk);
 
         raster_chunk.blit(&blit_source.as_window(), (8, 8).into());
-        assert_eq!(expected_raster_chunk.pixels, raster_chunk.pixels);
+        assert_raster_eq!(expected_raster_chunk, raster_chunk);
 
         raster_chunk.blit(&blit_source.as_window(), (-3, 0).into());
-        assert_eq!(expected_raster_chunk.pixels, raster_chunk.pixels);
+        assert_raster_eq!(expected_raster_chunk, raster_chunk);
 
         raster_chunk.blit(&blit_source.as_window(), (8, 0).into());
-        assert_eq!(expected_raster_chunk.pixels, raster_chunk.pixels);
+        assert_raster_eq!(expected_raster_chunk, raster_chunk);
     }
 
     #[test]
@@ -815,10 +864,7 @@ mod tests {
         expected_checkerboard_chunk.pixels[13] = colors::red();
         expected_checkerboard_chunk.pixels[15] = colors::red();
 
-        assert_eq!(
-            expected_checkerboard_chunk.pixels,
-            checkerboard_chunk.pixels
-        );
+        assert_raster_eq!(expected_checkerboard_chunk, checkerboard_chunk);
     }
 
     #[test]
@@ -872,7 +918,7 @@ mod tests {
 
         expected_chunk.pixels[1] = colors::blue();
 
-        assert_eq!(new_chunk, expected_chunk);
+        assert_raster_eq!(new_chunk, expected_chunk);
     }
 
     #[test]

@@ -352,6 +352,8 @@ impl Layer for RasterLayer {
 
 mod tests {
     #[cfg(test)]
+    use crate::assert_raster_eq;
+    #[cfg(test)]
     use crate::raster::pixels::colors;
 
     #[cfg(test)]
@@ -438,17 +440,11 @@ mod tests {
         view.translate((-5, 0));
 
         let mut expected_result = RasterChunk::new(10, 10);
-
-        expected_result.blit(&red_chunk.as_window(), DrawPosition::from((5, 0)));
+        expected_result.fill_rect(colors::red(), DrawPosition::from((5, 0)), 5, 10);
 
         let raster = raster_layer.rasterize(&view);
 
-        assert!(
-            raster == expected_result,
-            "\n{}\n{}",
-            raster,
-            expected_result
-        );
+        assert_raster_eq!(raster, expected_result);
     }
 
     #[test]
@@ -467,12 +463,7 @@ mod tests {
 
         let raster = raster_layer.rasterize(&view);
 
-        assert!(
-            raster == expected_result,
-            "\n{}\n{}",
-            raster,
-            expected_result
-        );
+        assert_raster_eq!(raster, expected_result);
     }
 
     #[test]
@@ -494,12 +485,7 @@ mod tests {
 
         let raster = raster_layer.rasterize(&view);
 
-        assert!(
-            raster == expected_result,
-            "\n{}\n{}",
-            raster,
-            expected_result
-        );
+        assert_raster_eq!(raster, expected_result);
     }
 
     #[test]
@@ -525,12 +511,7 @@ mod tests {
 
         let raster = raster_layer.rasterize(&view);
 
-        assert!(
-            raster_layer.rasterize(&view) == expected_result,
-            "\n{}\n{}",
-            raster,
-            expected_result
-        );
+        assert_raster_eq!(raster, expected_result);
     }
 
     #[test]
@@ -551,7 +532,7 @@ mod tests {
 
         let expected = RasterChunk::new_fill(colors::red(), 10, 10);
 
-        assert!(raster == expected, "\n{}\n{}", raster, expected);
+        assert_raster_eq!(raster, expected);
     }
 
     #[test]
@@ -576,7 +557,7 @@ mod tests {
 
         expected.blit(&red_chunk.as_window(), (0, 0).into());
 
-        assert!(raster == expected, "\n{}\n{}", raster, expected);
+        assert_raster_eq!(raster, expected);
     }
 
     #[test]
@@ -610,6 +591,6 @@ mod tests {
         expected.blit(&red_chunk.as_window(), (0, 0).into());
         expected.blit(&blue_chunk.as_window(), (6, 0).into());
 
-        assert!(raster == expected, "\n{}\n{}", raster, expected);
+        assert_raster_eq!(raster, expected);
     }
 }
