@@ -6,5 +6,5 @@ pub mod pixels;
 pub mod position;
 pub mod shapes;
 
-pub use layer::{RasterCanvasAction, RasterLayer};
+pub use layer::{RasterLayer, RasterLayerAction};
 pub use pixels::Pixel;

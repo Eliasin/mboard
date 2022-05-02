@@ -1,4 +1,4 @@
-use std::ops::Div;
+use std::ops::Mul;
 
 use super::{
     chunks::{RasterChunk, RasterWindow},
@@ -56,25 +56,138 @@ impl<T: Polygon> RasterPolygon for T {
     }
 }
 
+const OVAL_PADDING: f32 = 2.2;
+const HALF_OVAL_PADDING: f32 = OVAL_PADDING / 2.0;
+
+pub struct OvalBuilder {
+    width: f32,
+    height: f32,
+    roughness: Option<f32>,
+    color: Option<Pixel>,
+}
+
+impl OvalBuilder {
+    pub fn new(width: f32, height: f32) -> OvalBuilder {
+        OvalBuilder {
+            width,
+            height,
+            roughness: None,
+            color: None,
+        }
+    }
+
+    pub fn roughness(&mut self, roughness: f32) -> &mut Self {
+        self.roughness = Some(roughness);
+        self
+    }
+
+    pub fn color(&mut self, color: Pixel) -> &mut Self {
+        self.color = Some(color);
+        self
+    }
+
+    pub fn build(&self) -> Oval {
+        Oval {
+            width: self.width,
+            height: self.height,
+            roughness: self.roughness.unwrap_or(10.0),
+            color: self.color.unwrap_or(colors::black()),
+        }
+    }
+}
+
+pub struct Oval {
+    width: f32,
+    height: f32,
+    roughness: f32,
+    color: Pixel,
+}
+
+impl Oval {
+    pub fn new(width: f32, height: f32) -> Oval {
+        Oval {
+            width,
+            height,
+            roughness: 10.0,
+            color: colors::black(),
+        }
+    }
+
+    pub fn build(width: f32, height: f32) -> OvalBuilder {
+        OvalBuilder::new(width, height)
+    }
+
+    pub fn width(&self) -> f32 {
+        self.width
+    }
+
+    pub fn height(&self) -> f32 {
+        self.height
+    }
+}
+
+impl Polygon for Oval {
+    fn bounding_box(&self) -> (usize, usize) {
+        let width: usize = (self.width * OVAL_PADDING).ceil() as usize + 1;
+        let height: usize = (self.height * OVAL_PADDING).ceil() as usize + 1;
+
+        (width, height)
+    }
+
+    fn inside_proportion(&self, p: &PixelPosition) -> u8 {
+        let origin = (
+            self.width * HALF_OVAL_PADDING,
+            self.height * HALF_OVAL_PADDING,
+        );
+
+        let (x, y): (f32, f32) = (p.0 .0 as f32 - origin.0, p.0 .1 as f32 - origin.1);
+
+        let dist = f32::sqrt(x.powi(2) / self.width.powi(2) + y.powi(2) / self.height.powi(2));
+
+        if dist < 1.0 {
+            255
+        } else {
+            ((1.0 - (dist - 1.0).mul(self.roughness)) * 255.0).clamp(0.0, 255.0) as u8
+        }
+    }
+
+    fn color_from_inside_proportion(&self, p: u8) -> Pixel {
+        let u = p as f32 / 255.0;
+        let (r, g, b, a) = self.color.as_rgba();
+
+        let (r, g, b, a): (u8, u8, u8, u8) = (
+            (r as f32 * u).clamp(0.0, 255.0) as u8,
+            (g as f32 * u).clamp(0.0, 255.0) as u8,
+            (b as f32 * u).clamp(0.0, 255.0) as u8,
+            (a as f32 * u).clamp(0.0, 255.0) as u8,
+        );
+
+        Pixel::new_rgba(r, g, b, a)
+    }
+}
+
 pub struct Circle {
-    radius: f32,
+    oval: Oval,
     roughness: f32,
 }
 
 impl Circle {
     pub fn new(radius: f32) -> Circle {
         Circle {
-            radius,
+            oval: Oval::new(radius, radius),
             roughness: 10.0,
         }
     }
 
     pub fn new_roughness(radius: f32, roughness: f32) -> Circle {
-        Circle { radius, roughness }
+        Circle {
+            oval: Oval::new(radius, radius),
+            roughness,
+        }
     }
 
     pub fn radius(&self) -> f32 {
-        self.radius
+        self.oval.width
     }
 
     pub fn roughness(&self) -> f32 {
@@ -82,31 +195,13 @@ impl Circle {
     }
 }
 
-const CIRCLE_PADDING: f32 = 2.2;
-const HALF_CIRCLE_PADDING: f32 = CIRCLE_PADDING / 2.0;
-
 impl Polygon for Circle {
     fn bounding_box(&self) -> (usize, usize) {
-        let d: usize = (self.radius * CIRCLE_PADDING).ceil() as usize + 1;
-        (d, d)
+        self.oval.bounding_box()
     }
 
     fn inside_proportion(&self, p: &PixelPosition) -> u8 {
-        let origin = (
-            self.radius * HALF_CIRCLE_PADDING,
-            self.radius * HALF_CIRCLE_PADDING,
-        );
-
-        let (x, y): (f32, f32) = (p.0 .0 as f32 - origin.0, p.0 .1 as f32 - origin.1);
-
-        let dist = f32::sqrt(x.powi(2) + y.powi(2));
-
-        if dist < self.radius {
-            255
-        } else {
-            ((1.0 - (dist - self.radius).div(self.radius / self.roughness)) * 255.0)
-                .clamp(0.0, 255.0) as u8
-        }
+        self.oval.inside_proportion(p)
     }
 }
 

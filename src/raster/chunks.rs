@@ -220,6 +220,14 @@ impl<'a> RasterWindow<'a> {
             height: self.height,
         }
     }
+
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    pub fn height(&self) -> usize {
+        self.height
+    }
 }
 
 fn translate_rect_position_to_flat_index(
@@ -476,6 +484,7 @@ impl RasterChunk {
         if source.width == self.width
             && source.height == self.height
             && source.backing.len() == self.pixels.len()
+            && dest_position == DrawPosition::from((0, 0))
         {
             self.pixels.copy_from_slice(source.backing);
             return;
@@ -660,7 +669,7 @@ mod tests {
 
         let blit_source = RasterChunk::new_fill(colors::blue(), 8, 8);
 
-        raster_chunk.blit(&blit_source.as_window(), (2, 2).into());
+        raster_chunk.blit(&blit_source.as_window(), (0, 0).into());
 
         assert_eq!(raster_chunk.pixels, blit_source.pixels);
     }
