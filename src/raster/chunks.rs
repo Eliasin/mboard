@@ -553,12 +553,56 @@ impl RasterChunk {
         });
     }
 
+    /// Finds the nearest neighbour of a pixel given some scale.
+    fn nearest_neighbour(
+        p: (usize, usize),
+        source_dimensions: (usize, usize),
+        dest_dimensions: (usize, usize),
+    ) -> (usize, usize) {
+        let x_stretch: f32 = source_dimensions.0 as f32 / dest_dimensions.0 as f32;
+        let y_stretch: f32 = source_dimensions.1 as f32 / dest_dimensions.1 as f32;
+
+        (
+            (p.0 as f32 * x_stretch).floor() as usize,
+            (p.1 as f32 * y_stretch).floor() as usize,
+        )
+    }
+
+    /// Scales the chunk by a factor using the nearest-neighbour algorithm.
+    pub fn nn_scale(&mut self, new_size: (usize, usize)) {
+        let (new_width, new_height) = new_size;
+
+        if new_width == self.width && new_height == self.height {
+            return;
+        }
+
+        let mut new_chunk = RasterChunk::new(new_width, new_height);
+
+        for column in 0..new_width {
+            for row in 0..new_height {
+                let nearest = RasterChunk::nearest_neighbour(
+                    (column, row),
+                    (self.width, self.height),
+                    new_size,
+                );
+
+                let source_index = self.get_index_from_position(nearest.into()).unwrap();
+                let new_index = new_chunk
+                    .get_index_from_position((column, row).into())
+                    .unwrap();
+                new_chunk.pixels[new_index] = self.pixels[source_index];
+            }
+        }
+
+        *self = new_chunk;
+    }
+
     /// The dimensions of a raster chunk in `(width, height)` format.
     pub fn dimensions(&self) -> (usize, usize) {
         (self.width, self.height)
     }
 
-    pub fn pixels(&self) -> &Box<[Pixel]> {
+    pub fn pixels(&self) -> &[Pixel] {
         &self.pixels
     }
 
@@ -936,5 +980,31 @@ mod tests {
         let raster_window_over_both = RasterWindow::new(&raster_chunk, (1, 1).into(), 11, 11);
 
         assert!(raster_window_over_both.is_none());
+    }
+
+    #[test]
+    fn test_scale_up() {
+        let mut raster_chunk = RasterChunk::new(10, 10);
+        raster_chunk.fill_rect(colors::red(), DrawPosition::from((0, 0)), 5, 5);
+
+        raster_chunk.nn_scale((20, 20));
+
+        let mut expected = RasterChunk::new(20, 20);
+        expected.fill_rect(colors::red(), DrawPosition::from((0, 0)), 10, 10);
+
+        assert_raster_eq!(raster_chunk, expected);
+    }
+
+    #[test]
+    fn test_scale_down() {
+        let mut raster_chunk = RasterChunk::new(20, 20);
+        raster_chunk.fill_rect(colors::red(), DrawPosition::from((0, 0)), 10, 10);
+
+        raster_chunk.nn_scale((10, 10));
+
+        let mut expected = RasterChunk::new(10, 10);
+        expected.fill_rect(colors::red(), DrawPosition::from((0, 0)), 5, 5);
+
+        assert_raster_eq!(raster_chunk, expected);
     }
 }

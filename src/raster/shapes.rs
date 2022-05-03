@@ -91,7 +91,7 @@ impl OvalBuilder {
             half_width: self.width,
             half_height: self.height,
             roughness: self.roughness.unwrap_or(10.0),
-            color: self.color.unwrap_or(colors::black()),
+            color: self.color.unwrap_or_else(colors::black),
         }
     }
 }

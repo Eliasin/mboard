@@ -5,10 +5,11 @@ use enum_dispatch::enum_dispatch;
 /// The view has a scale and a width and height, the width and height are in pixel units.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct CanvasView {
-    pub top_left: (i64, i64),
-    pub width: usize,
-    pub height: usize,
-    scale: u32,
+    top_left: (i64, i64),
+    view_width: usize,
+    view_height: usize,
+    canvas_width: usize,
+    canvas_height: usize,
 }
 
 impl CanvasView {
@@ -17,9 +18,10 @@ impl CanvasView {
     pub fn new(width: usize, height: usize) -> CanvasView {
         CanvasView {
             top_left: (0, 0),
-            width,
-            height,
-            scale: 512,
+            view_width: width,
+            view_height: height,
+            canvas_width: width,
+            canvas_height: height,
         }
     }
 
@@ -28,20 +30,67 @@ impl CanvasView {
         self.top_left = (self.top_left.0 + d.0, self.top_left.1 + d.1);
     }
 
-    /// Get the scale of a view.
-    pub fn scale(&self) -> f32 {
-        self.scale as f32 / 512.0
-    }
-
-    /// Set the scale of a view.
-    pub fn set_scale(&mut self, scale: f32) {
-        self.scale = (scale * 512.0).clamp(0.0, u32::MAX as f32) as u32;
-    }
-
     // Resizes the view to a different `(width, height)`.
-    pub fn resize(&mut self, d: (usize, usize)) {
-        self.width = d.0;
-        self.height = d.1;
+    pub fn resize_view(&mut self, d: (usize, usize)) {
+        self.view_width = d.0;
+        self.view_height = d.1;
+    }
+
+    // Resizes the area of the canvas the view renders to a different `(width, height)`.
+    pub fn resize_canvas_source(&mut self, d: (usize, usize)) {
+        self.canvas_width = d.0;
+        self.canvas_height = d.1;
+    }
+
+    // The dimensions of the view in `(width, height)`.
+    pub fn view_dimensions(&self) -> (usize, usize) {
+        (self.view_width, self.view_height)
+    }
+
+    // The dimensions of canvas area spanned by the view in `(width, height)`.
+    pub fn canvas_dimensions(&self) -> (usize, usize) {
+        (self.canvas_width, self.canvas_height)
+    }
+
+    // Change the canvas source of the view while preserving the middle of the view.
+    pub fn pin_resize_canvas(&mut self, d: (usize, usize)) {
+        let (canvas_width, canvas_height): (u32, u32) = (
+            self.canvas_width.try_into().unwrap(),
+            self.canvas_height.try_into().unwrap(),
+        );
+
+        let d_u32: (u32, u32) = (d.0.try_into().unwrap(), d.1.try_into().unwrap());
+        let difference: (u32, u32) = (canvas_width - d_u32.0, canvas_height - d_u32.1);
+
+        self.translate((
+            (difference.0 / 2).try_into().unwrap(),
+            (difference.1 / 2).try_into().unwrap(),
+        ));
+        self.resize_canvas_source(d);
+    }
+
+    // Scale the canvas source of the view while preserving the middle of the view.
+    // Negative or factors that scale the view too small are ignored.
+    pub fn pin_scale_canvas(&mut self, factor: (f32, f32)) {
+        if factor.0 < 0.1 || factor.1 < 0.1 {
+            return;
+        }
+
+        let new_dimensions = (
+            (self.canvas_width as f32 * factor.0) as usize,
+            (self.canvas_height as f32 * factor.1) as usize,
+        );
+
+        if new_dimensions.0 < 1 || new_dimensions.1 < 1 {
+            return;
+        }
+
+        self.pin_resize_canvas(new_dimensions);
+    }
+
+    // The top left of a view in canvas-space.
+    pub fn anchor(&self) -> (i64, i64) {
+        self.top_left
     }
 }
 
@@ -66,17 +115,15 @@ pub trait Layer {
 }
 
 /// A collection of layers that can be rendered.
+#[derive(Default)]
 pub struct Canvas {
     layers: Vec<LayerImplementation>,
 }
 
 impl Canvas {
-    pub fn new() -> Canvas {
-        Canvas { layers: vec![] }
-    }
-
     pub fn render(&mut self, view: &CanvasView) -> RasterChunk {
-        let mut base = RasterChunk::new_fill(colors::white(), view.width, view.height);
+        let (view_width, view_height) = view.view_dimensions();
+        let mut base = RasterChunk::new_fill(colors::white(), view_width, view_height);
 
         for layer in &mut self.layers {
             base.composite_over(&layer.rasterize(view).as_window(), (0, 0).into());
@@ -114,7 +161,7 @@ mod tests {
 
     #[test]
     fn test_compositing_rasters() {
-        let mut canvas = Canvas::new();
+        let mut canvas = Canvas::default();
         let mut red_layer = RasterLayer::new(128);
         let mut blue_layer = RasterLayer::new(128);
 

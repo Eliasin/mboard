@@ -127,19 +127,13 @@ impl RasterLayer {
     }
 
     fn find_chunk_rect_in_view(&self, view: &CanvasView) -> ChunkRect {
-        let origin = (
-            view.top_left.0 + TryInto::<i64>::try_into(view.width / 2).unwrap(),
-            view.top_left.1 + TryInto::<i64>::try_into(view.height / 2).unwrap(),
-        );
-
-        let scaled_width = (view.width as f32 * view.scale()) as i64;
-        let scaled_height = (view.height as f32 * view.scale()) as i64;
-        let top_left_scaled = (origin.0 - scaled_width / 2, origin.1 - scaled_height / 2);
+        let (view_width, view_height) = view.canvas_dimensions();
+        let view_anchor = view.anchor();
 
         let canvas_rect = CanvasRect {
-            top_left: top_left_scaled,
-            width: scaled_width.try_into().unwrap(),
-            height: scaled_height.try_into().unwrap(),
+            top_left: view_anchor,
+            width: view_width as u32,
+            height: view_height as u32,
         };
 
         self.find_chunk_rect_in_canvas_rect(canvas_rect)
@@ -319,7 +313,8 @@ impl Layer for RasterLayer {
     fn rasterize(&mut self, view: &CanvasView) -> RasterChunk {
         let chunk_rect = self.find_chunk_rect_in_view(view);
 
-        let mut raster_result = RasterChunk::new(view.width, view.height);
+        let (view_width, view_height) = view.canvas_dimensions();
+        let mut raster_result = RasterChunk::new(view_width, view_height);
 
         let mut rasterizer = |raster_chunk: &mut RasterChunk,
                               chunk_rect_position: ChunkRectPosition| {
@@ -345,6 +340,8 @@ impl Layer for RasterLayer {
         };
 
         self.for_chunk_rect(&mut rasterizer, chunk_rect);
+
+        raster_result.nn_scale(view.view_dimensions());
 
         raster_result
     }
@@ -590,6 +587,30 @@ mod tests {
 
         expected.blit(&red_chunk.as_window(), (0, 0).into());
         expected.blit(&blue_chunk.as_window(), (6, 0).into());
+
+        assert_raster_eq!(raster, expected);
+    }
+
+    #[test]
+    fn test_scaled_rasterization() {
+        let mut raster_layer = RasterLayer::new(20);
+        let left_rect = CanvasRect {
+            top_left: (9, 9).into(),
+            width: 2,
+            height: 2,
+        };
+        let red_fill = RasterLayerAction::fill_rect(left_rect, colors::red());
+        raster_layer.perform_action(red_fill);
+
+        let mut view = CanvasView::new(20, 20);
+        view.pin_resize_canvas((10, 10));
+
+        let raster = raster_layer.rasterize(&view);
+
+        let mut expected = RasterChunk::new(10, 10);
+        expected.fill_rect(colors::red(), (4, 4).into(), 2, 2);
+
+        expected.nn_scale((20, 20));
 
         assert_raster_eq!(raster, expected);
     }
