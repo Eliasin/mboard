@@ -15,6 +15,77 @@ pub struct PixelPosition(pub (usize, usize));
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct DrawPosition(pub (i64, i64));
 
+/// A relative scale between two dimensions. Guaranteed to be non-negative.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Scale {
+    pub width_factor: f32,
+    pub height_factor: f32,
+}
+
+impl Scale {
+    pub fn new(width_factor: f32, height_factor: f32) -> Option<Scale> {
+        if width_factor < 0.0 || height_factor < 0.0 {
+            None
+        } else {
+            Some(Scale {
+                width_factor,
+                height_factor,
+            })
+        }
+    }
+
+    pub fn width_factor(&self) -> f32 {
+        self.width_factor
+    }
+
+    pub fn height_factor(&self) -> f32 {
+        self.height_factor
+    }
+}
+
+/// The dimensions of a 2d object.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct Dimensions {
+    pub width: usize,
+    pub height: usize,
+}
+
+impl Dimensions {
+    /// Transform a point from this dimension space to another, preserving the relative
+    /// offset from the top-left.
+    pub fn transform_point(&self, p: PixelPosition, dest_dimensions: Dimensions) -> PixelPosition {
+        let x_stretch: f32 = self.width as f32 / dest_dimensions.width as f32;
+        let y_stretch: f32 = self.height as f32 / dest_dimensions.height as f32;
+
+        PixelPosition((
+            (p.0 .0 as f32 * x_stretch).floor() as usize,
+            (p.0 .1 as f32 * y_stretch).floor() as usize,
+        ))
+    }
+
+    /// Scale the dimensions.
+    pub fn scale(&self, scale: Scale) -> Dimensions {
+        let new_width = ((self.width as f32) * scale.width_factor).round() as usize;
+        let new_height = ((self.height as f32) * scale.height_factor).round() as usize;
+        Dimensions {
+            width: new_width,
+            height: new_height,
+        }
+    }
+
+    /// Gets the difference between this dimension and another.
+    pub fn difference(&self, other: Dimensions) -> (i64, i64) {
+        (
+            self.width as i64 - other.width as i64,
+            self.height as i64 - other.height as i64,
+        )
+    }
+}
+
+/// A position referencing a pixel within a raster layer.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct LayerPosition(pub (i64, i64));
+
 impl Add<PixelPosition> for PixelPosition {
     type Output = PixelPosition;
 

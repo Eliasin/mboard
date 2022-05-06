@@ -1,19 +1,59 @@
 use crate::raster::{
-    chunks::{transform_point, RasterChunk},
+    chunks::RasterChunk,
+    layer::ChunkPosition,
     pixels::colors,
+    position::{Dimensions, PixelPosition, Scale},
     RasterLayer, RasterLayerAction,
 };
 use enum_dispatch::enum_dispatch;
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct CanvasPosition(pub (i64, i64));
+
+impl CanvasPosition {
+    /// Get a point in the canvas from a view and an offset to the view.
+    pub fn from_view_position(view: CanvasView, p: PixelPosition) -> CanvasPosition {
+        CanvasPosition((
+            view.top_left.0 .0 + p.0 .0 as i64,
+            view.top_left.0 .1 + p.0 .1 as i64,
+        ))
+    }
+
+    /// Translate a canvas position by an offset.
+    pub fn translate(&self, offset: (i64, i64)) -> CanvasPosition {
+        CanvasPosition((self.0 .0 + offset.0, self.0 .1 + offset.1))
+    }
+
+    /// Translate a canvas position by some portion of an offset.
+    pub fn translate_scaled(&self, offset: (i64, i64), divisor: i64) -> CanvasPosition {
+        self.translate((offset.0 / divisor, offset.1 / divisor))
+    }
+
+    /// The chunk containing a canvas position.
+    pub fn containing_chunk(&self, chunk_size: usize) -> ChunkPosition {
+        ChunkPosition((
+            self.0 .0.div_floor(chunk_size as i64),
+            self.0 .1.div_floor(chunk_size as i64),
+        ))
+    }
+
+    /// Where the `CanvasPosition` relative to the containing chunk.
+    pub fn position_in_containing_chunk(&self, chunk_size: usize) -> PixelPosition {
+        let containing_chunk = self.containing_chunk(chunk_size);
+        PixelPosition((
+            (self.0 .0 - containing_chunk.0 .0 * chunk_size as i64) as usize,
+            (self.0 .1 - containing_chunk.0 .1 * chunk_size as i64) as usize,
+        ))
+    }
+}
 
 /// A view positioned relative to a set of layers.
 /// The view has a scale and a width and height, the width and height are in pixel units.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct CanvasView {
-    top_left: (i64, i64),
-    view_width: usize,
-    view_height: usize,
-    canvas_width: usize,
-    canvas_height: usize,
+    pub top_left: CanvasPosition,
+    pub view_dimensions: Dimensions,
+    pub canvas_dimensions: Dimensions,
 }
 
 impl CanvasView {
@@ -21,101 +61,44 @@ impl CanvasView {
     /// is at the origin with an effective scale of 1.
     pub fn new(width: usize, height: usize) -> CanvasView {
         CanvasView {
-            top_left: (0, 0),
-            view_width: width,
-            view_height: height,
-            canvas_width: width,
-            canvas_height: height,
+            top_left: CanvasPosition((0, 0)),
+            view_dimensions: Dimensions { width, height },
+            canvas_dimensions: Dimensions { width, height },
         }
     }
 
-    /// Translate a view by `d`.
+    /// Translate a view by an offset.
     pub fn translate(&mut self, d: (i64, i64)) {
-        self.top_left = (self.top_left.0 + d.0, self.top_left.1 + d.1);
-    }
-
-    // Resizes the view to a different `(width, height)`.
-    pub fn resize_view(&mut self, d: (usize, usize)) {
-        self.view_width = d.0;
-        self.view_height = d.1;
-    }
-
-    // Resizes the area of the canvas the view renders to a different `(width, height)`.
-    pub fn resize_canvas_source(&mut self, d: (usize, usize)) {
-        self.canvas_width = d.0;
-        self.canvas_height = d.1;
-    }
-
-    // The dimensions of the view in `(width, height)`.
-    pub fn view_dimensions(&self) -> (usize, usize) {
-        (self.view_width, self.view_height)
-    }
-
-    // The dimensions of canvas area spanned by the view in `(width, height)`.
-    pub fn canvas_dimensions(&self) -> (usize, usize) {
-        (self.canvas_width, self.canvas_height)
+        self.top_left = self.top_left.translate(d);
     }
 
     // Change the canvas source of the view while preserving the middle of the view.
-    pub fn pin_resize_canvas(&mut self, d: (usize, usize)) {
-        let (canvas_width, canvas_height): (u32, u32) = (
-            self.canvas_width.try_into().unwrap(),
-            self.canvas_height.try_into().unwrap(),
-        );
+    pub fn pin_resize_canvas(&mut self, d: Dimensions) {
+        let difference = self.canvas_dimensions.difference(d);
 
-        let d_u32: (u32, u32) = (d.0.try_into().unwrap(), d.1.try_into().unwrap());
-        let difference: (u32, u32) = (canvas_width - d_u32.0, canvas_height - d_u32.1);
-
-        self.translate((
-            (difference.0 / 2).try_into().unwrap(),
-            (difference.1 / 2).try_into().unwrap(),
-        ));
-        self.resize_canvas_source(d);
+        self.top_left = self.top_left.translate_scaled(difference, 2);
+        self.canvas_dimensions = d;
     }
 
     // Scale the canvas source of the view while preserving the middle of the view.
     // Negative or factors that scale the view too small are ignored.
-    pub fn pin_scale_canvas(&mut self, factor: (f32, f32)) {
-        if factor.0 < 0.1 || factor.1 < 0.1 {
-            return;
-        }
+    pub fn pin_scale_canvas(&mut self, factor: Scale) {
+        let new_dimensions = self.canvas_dimensions.scale(factor);
 
-        let new_dimensions = (
-            (self.canvas_width as f32 * factor.0) as usize,
-            (self.canvas_height as f32 * factor.1) as usize,
-        );
-
-        if new_dimensions.0 < 1 || new_dimensions.1 < 1 {
+        if new_dimensions.width < 1 || new_dimensions.height < 1 {
             return;
         }
 
         self.pin_resize_canvas(new_dimensions);
     }
 
-    // The top left of a view in canvas-space.
-    pub fn anchor(&self) -> (i64, i64) {
-        self.top_left
-    }
-
     /// Transforms a point from view space to canvas space.
-    pub fn transform_view_to_canvas(&self, p: (usize, usize)) -> (i64, i64) {
-        let scaled_point = transform_point(
-            p,
-            (self.canvas_width, self.canvas_height),
-            (self.view_width, self.view_height),
-        );
+    pub fn transform_view_to_canvas(&self, p: PixelPosition) -> CanvasPosition {
+        let scaled_point = self
+            .canvas_dimensions
+            .transform_point(p, self.view_dimensions);
 
-        let scaled_point: (i64, i64) = (
-            scaled_point.0.try_into().unwrap(),
-            scaled_point.1.try_into().unwrap(),
-        );
-
-        let translated_point: (i64, i64) = (
-            scaled_point.0 + self.top_left.0,
-            scaled_point.1 + self.top_left.1,
-        );
-
-        translated_point
+        CanvasPosition::from_view_position(*self, scaled_point)
     }
 }
 
@@ -123,9 +106,8 @@ impl CanvasView {
 /// on layers.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct CanvasRect {
-    pub top_left: (i64, i64),
-    pub width: u32,
-    pub height: u32,
+    pub top_left: CanvasPosition,
+    pub dimensions: Dimensions,
 }
 
 /// A logical layer in the canvas. Layers can be composited ontop of eachother.
@@ -147,7 +129,10 @@ pub struct Canvas {
 
 impl Canvas {
     pub fn render(&mut self, view: &CanvasView) -> RasterChunk {
-        let (view_width, view_height) = view.view_dimensions();
+        let Dimensions {
+            width: view_width,
+            height: view_height,
+        } = view.view_dimensions;
         let mut base = RasterChunk::new_fill(colors::white(), view_width, view_height);
 
         for layer in &mut self.layers {
@@ -189,14 +174,32 @@ mod tests {
         let mut view = CanvasView::new(10, 10);
 
         view.translate((-5, -5));
-        assert_eq!(view.transform_view_to_canvas((5, 5)), (0, 0));
-        assert_eq!(view.transform_view_to_canvas((0, 5)), (-5, 0));
+        assert_eq!(
+            view.transform_view_to_canvas(PixelPosition((5, 5))),
+            CanvasPosition((0, 0))
+        );
+        assert_eq!(
+            view.transform_view_to_canvas(PixelPosition((0, 5))),
+            CanvasPosition((-5, 0))
+        );
 
         view.translate((5, 5));
-        view.resize_canvas_source((20, 20));
-        assert_eq!(view.transform_view_to_canvas((0, 1)), (0, 2));
-        assert_eq!(view.transform_view_to_canvas((5, 5)), (10, 10));
-        assert_eq!(view.transform_view_to_canvas((5, 1)), (10, 2));
+        view.canvas_dimensions = Dimensions {
+            width: 20,
+            height: 20,
+        };
+        assert_eq!(
+            view.transform_view_to_canvas(PixelPosition((0, 1))),
+            CanvasPosition((0, 2))
+        );
+        assert_eq!(
+            view.transform_view_to_canvas(PixelPosition((5, 5))),
+            CanvasPosition((10, 10))
+        );
+        assert_eq!(
+            view.transform_view_to_canvas(PixelPosition((5, 1))),
+            CanvasPosition((10, 2))
+        );
     }
 
     #[test]
@@ -206,14 +209,18 @@ mod tests {
         let mut blue_layer = RasterLayer::new(128);
 
         let quarter = CanvasRect {
-            top_left: (0, 0),
-            width: 64,
-            height: 64,
+            top_left: CanvasPosition((0, 0)),
+            dimensions: Dimensions {
+                width: 64,
+                height: 64,
+            },
         };
         let rect = CanvasRect {
-            top_left: (0, 0),
-            width: 128,
-            height: 128,
+            top_left: CanvasPosition((0, 0)),
+            dimensions: Dimensions {
+                width: 128,
+                height: 128,
+            },
         };
 
         red_layer.perform_action(RasterLayerAction::fill_rect(

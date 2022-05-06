@@ -10,14 +10,13 @@ use std::convert::TryInto;
 use std::fmt::Display;
 
 use super::pixels::{colors, Pixel};
-use super::position::{DrawPosition, PixelPosition};
+use super::position::{Dimensions, DrawPosition, PixelPosition};
 
 /// A square collection of pixels.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RasterChunk {
     pixels: Box<[Pixel]>,
-    width: usize,
-    height: usize,
+    dimensions: Dimensions,
 }
 
 /// A reference to a sub-rectangle of a raster chunk.
@@ -25,10 +24,8 @@ pub struct RasterChunk {
 pub struct RasterWindow<'a> {
     backing: &'a [Pixel],
     top_left: PixelPosition,
-    width: usize,
-    height: usize,
-    backing_width: usize,
-    backing_height: usize,
+    dimensions: Dimensions,
+    backing_dimensions: Dimensions,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -69,22 +66,6 @@ impl std::fmt::Display for InvalidPixelSliceSize {
     }
 }
 
-/// Transform a point from one dimension space to another, preserving the relative
-/// offset from the top-left.
-pub fn transform_point(
-    p: (usize, usize),
-    source_dimensions: (usize, usize),
-    dest_dimensions: (usize, usize),
-) -> (usize, usize) {
-    let x_stretch: f32 = source_dimensions.0 as f32 / dest_dimensions.0 as f32;
-    let y_stretch: f32 = source_dimensions.1 as f32 / dest_dimensions.1 as f32;
-
-    (
-        (p.0 as f32 * x_stretch).floor() as usize,
-        (p.1 as f32 * y_stretch).floor() as usize,
-    )
-}
-
 fn get_color_character_for_pixel(p: &Pixel) -> &'static str {
     let mut color_characters = vec![
         (colors::red(), "r"),
@@ -118,7 +99,7 @@ fn display_raster_row(row: &[Pixel]) -> String {
 impl<'a> Display for RasterWindow<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut s = String::new();
-        for row_num in 0..self.height {
+        for row_num in 0..self.dimensions.height {
             let row_slice = self.get_row_slice(row_num).unwrap();
             s += "|";
             s += display_raster_row(row_slice).as_str();
@@ -150,18 +131,16 @@ impl<'a> RasterWindow<'a> {
         width: usize,
         height: usize,
     ) -> Option<RasterWindow<'a>> {
-        let over_width = top_left.0 .0 + width > chunk.width;
-        let over_height = top_left.0 .1 + height > chunk.height;
+        let over_width = top_left.0 .0 + width > chunk.dimensions.width;
+        let over_height = top_left.0 .1 + height > chunk.dimensions.height;
         if over_width || over_height {
             None
         } else {
             Some(RasterWindow {
                 backing: chunk.pixels.as_ref(),
-                backing_height: chunk.height,
-                backing_width: chunk.width,
+                backing_dimensions: chunk.dimensions,
                 top_left,
-                width,
-                height,
+                dimensions: Dimensions { width, height },
             })
         }
     }
@@ -181,11 +160,9 @@ impl<'a> RasterWindow<'a> {
         } else {
             Ok(RasterWindow {
                 backing: slice,
-                backing_height: height,
-                backing_width: width,
+                backing_dimensions: Dimensions { width, height },
                 top_left: (0, 0).into(),
-                height,
-                width,
+                dimensions: Dimensions { width, height },
             })
         }
     }
@@ -199,35 +176,38 @@ impl<'a> RasterWindow<'a> {
         left: usize,
         right: usize,
     ) -> Option<RasterWindow<'a>> {
-        if left + right >= self.width || top + bottom >= self.height {
+        if left + right >= self.dimensions.width || top + bottom >= self.dimensions.height {
             return None;
         }
 
         let new_top_left = self.top_left + PixelPosition::from((left, top));
 
-        let new_width = self.width - right - left;
-        let new_height = self.height - bottom - top;
+        let new_width = self.dimensions.width - right - left;
+        let new_height = self.dimensions.height - bottom - top;
 
-        if new_top_left.0 .0 > self.backing_width || new_top_left.0 .1 > self.backing_height {
+        if new_top_left.0 .0 > self.backing_dimensions.width
+            || new_top_left.0 .1 > self.backing_dimensions.height
+        {
             return None;
         }
 
         Some(RasterWindow {
             backing: self.backing,
             top_left: new_top_left,
-            height: new_height,
-            width: new_width,
-            backing_height: self.backing_height,
-            backing_width: self.backing_width,
+            dimensions: Dimensions {
+                width: new_width,
+                height: new_height,
+            },
+            backing_dimensions: self.backing_dimensions,
         })
     }
 
     /// Creates a raster chunk by copying the data in a window.
     pub fn to_chunk(&self) -> RasterChunk {
-        let mut rect = Vec::<Pixel>::with_capacity(self.width * self.height);
+        let mut rect = Vec::<Pixel>::with_capacity(self.dimensions.width * self.dimensions.height);
 
-        for row in 0..self.height {
-            for column in 0..self.width {
+        for row in 0..self.dimensions.height {
+            for column in 0..self.dimensions.width {
                 let source_position = (column, row);
 
                 let source_index = self
@@ -239,17 +219,12 @@ impl<'a> RasterWindow<'a> {
 
         RasterChunk {
             pixels: rect.into_boxed_slice(),
-            width: self.width,
-            height: self.height,
+            dimensions: self.dimensions,
         }
     }
 
-    pub fn width(&self) -> usize {
-        self.width
-    }
-
-    pub fn height(&self) -> usize {
-        self.height
+    pub fn dimensions(&self) -> Dimensions {
+        self.dimensions
     }
 }
 
@@ -273,20 +248,20 @@ fn translate_rect_position_to_flat_index(
 
 impl<'a> IndexableByPosition for RasterWindow<'a> {
     fn get_index_from_position(&self, position: PixelPosition) -> Option<usize> {
-        if position.0 .0 > self.width || position.0 .1 > self.height {
+        if position.0 .0 > self.dimensions.width || position.0 .1 > self.dimensions.height {
             None
         } else {
             translate_rect_position_to_flat_index(
                 (position + self.top_left).0,
-                self.backing_width,
-                self.backing_height,
+                self.backing_dimensions.width,
+                self.backing_dimensions.height,
             )
         }
     }
 
     fn get_row_slice(&self, row_num: usize) -> Option<&[Pixel]> {
         let row_start = self.get_index_from_position((0, row_num).into())?;
-        let row_end = self.get_index_from_position((self.width - 1, row_num).into())?;
+        let row_end = self.get_index_from_position((self.dimensions.width - 1, row_num).into())?;
 
         Some(&self.backing[row_start..row_end + 1])
     }
@@ -298,8 +273,8 @@ impl<'a> IndexableByPosition for RasterWindow<'a> {
         // not 0.
         let index = translate_rect_position_to_flat_index(
             (bounded_position + self.top_left).0,
-            self.backing_width,
-            self.backing_height,
+            self.backing_dimensions.width,
+            self.backing_dimensions.height,
         )
         .unwrap();
 
@@ -312,20 +287,26 @@ impl<'a> IndexableByPosition for RasterWindow<'a> {
 
     fn bound_position(&self, position: DrawPosition) -> PixelPosition {
         PixelPosition((
-            (TryInto::<usize>::try_into(position.0 .0.max(0)).unwrap()).min(self.width - 1),
-            (TryInto::<usize>::try_into(position.0 .1.max(0)).unwrap()).min(self.height - 1),
+            (TryInto::<usize>::try_into(position.0 .0.max(0)).unwrap())
+                .min(self.dimensions.width - 1),
+            (TryInto::<usize>::try_into(position.0 .1.max(0)).unwrap())
+                .min(self.dimensions.height - 1),
         ))
     }
 }
 
 impl IndexableByPosition for RasterChunk {
     fn get_index_from_position(&self, position: PixelPosition) -> Option<usize> {
-        translate_rect_position_to_flat_index(position.0, self.width, self.height)
+        translate_rect_position_to_flat_index(
+            position.0,
+            self.dimensions.width,
+            self.dimensions.height,
+        )
     }
 
     fn get_row_slice(&self, row_num: usize) -> Option<&[Pixel]> {
         let row_start = self.get_index_from_position((0, row_num).into())?;
-        let row_end = self.get_index_from_position((self.width - 1, row_num).into())?;
+        let row_end = self.get_index_from_position((self.dimensions.width - 1, row_num).into())?;
 
         Some(&self.pixels[row_start..row_end + 1])
     }
@@ -333,9 +314,12 @@ impl IndexableByPosition for RasterChunk {
     fn get_index_from_bounded_position(&self, position: DrawPosition) -> BoundedIndex {
         let bounded_position = self.bound_position(position);
 
-        let index =
-            translate_rect_position_to_flat_index(bounded_position.0, self.width, self.height)
-                .unwrap();
+        let index = translate_rect_position_to_flat_index(
+            bounded_position.0,
+            self.dimensions.width,
+            self.dimensions.height,
+        )
+        .unwrap();
 
         BoundedIndex {
             index,
@@ -346,8 +330,10 @@ impl IndexableByPosition for RasterChunk {
 
     fn bound_position(&self, position: DrawPosition) -> PixelPosition {
         PixelPosition((
-            (TryInto::<usize>::try_into(position.0 .0.max(0)).unwrap()).min(self.width - 1),
-            (TryInto::<usize>::try_into(position.0 .1.max(0)).unwrap()).min(self.height - 1),
+            (TryInto::<usize>::try_into(position.0 .0.max(0)).unwrap())
+                .min(self.dimensions.width - 1),
+            (TryInto::<usize>::try_into(position.0 .1.max(0)).unwrap())
+                .min(self.dimensions.height - 1),
         ))
     }
 }
@@ -360,8 +346,7 @@ impl RasterChunk {
 
         RasterChunk {
             pixels: pixels.into_boxed_slice(),
-            width,
-            height,
+            dimensions: Dimensions { width, height },
         }
     }
 
@@ -381,8 +366,7 @@ impl RasterChunk {
 
         RasterChunk {
             pixels: pixels.into_boxed_slice(),
-            width,
-            height,
+            dimensions: Dimensions { width, height },
         }
     }
 
@@ -415,8 +399,7 @@ impl RasterChunk {
 
         RasterChunk {
             pixels: rect.into_boxed_slice(),
-            width,
-            height,
+            dimensions: Dimensions { width, height },
         }
     }
 
@@ -425,10 +408,8 @@ impl RasterChunk {
         RasterWindow {
             backing: self.pixels.as_ref(),
             top_left: (0, 0).into(),
-            width: self.width,
-            height: self.height,
-            backing_height: self.height,
-            backing_width: self.width,
+            dimensions: self.dimensions,
+            backing_dimensions: self.dimensions,
         }
     }
 
@@ -439,15 +420,15 @@ impl RasterChunk {
         source: &RasterWindow<'a>,
         dest_position: DrawPosition,
     ) -> Option<RasterWindow<'a>> {
-        if source.width == 0 || source.height == 0 {
+        if source.dimensions.width == 0 || source.dimensions.height == 0 {
             return None;
         }
 
         let source_top_left_in_dest = self.get_index_from_bounded_position(dest_position);
 
         let bottom_right: (i64, i64) = (
-            (source.width - 1).try_into().unwrap(),
-            (source.height - 1).try_into().unwrap(),
+            (source.dimensions.width - 1).try_into().unwrap(),
+            (source.dimensions.height - 1).try_into().unwrap(),
         );
         let source_bottom_right_in_dest =
             self.get_index_from_bounded_position(dest_position + bottom_right);
@@ -482,8 +463,8 @@ impl RasterChunk {
     {
         let bounded_top_left = self.bound_position(dest_position);
 
-        let shrunk_width = width.min(self.width);
-        let shrunk_height = height.min(self.height);
+        let shrunk_width = width.min(self.dimensions.width);
+        let shrunk_height = height.min(self.dimensions.height);
 
         for row_num in 0..shrunk_height {
             let start = self
@@ -509,12 +490,13 @@ impl RasterChunk {
     ) {
         let bounded_top_left = self.bound_position(dest_position);
         if let Some(shrunk_source) = self.shrink_window_to_contain(source, dest_position) {
-            for row_num in 0..shrunk_source.height {
+            for row_num in 0..shrunk_source.dimensions.height {
                 let source_row = shrunk_source.get_row_slice(row_num);
 
                 let row_start_position = bounded_top_left + (0_usize, row_num);
                 let row_start_index = self.get_index_from_position(row_start_position).unwrap();
-                let row_end_position = bounded_top_left + (shrunk_source.width - 1, row_num);
+                let row_end_position =
+                    bounded_top_left + (shrunk_source.dimensions.width - 1, row_num);
                 let row_end_index = self.get_index_from_position(row_end_position).unwrap();
 
                 if let Some(source_row) = source_row {
@@ -531,8 +513,8 @@ impl RasterChunk {
     /// the portion of the destination outside the chunk is ignored.
     pub fn blit(&mut self, source: &RasterWindow, dest_position: DrawPosition) {
         // Optimization for blittig something completely over a chunk
-        if source.width == self.width
-            && source.height == self.height
+        if source.dimensions.width == self.dimensions.width
+            && source.dimensions.height == self.dimensions.height
             && source.backing.len() == self.pixels.len()
             && dest_position == DrawPosition::from((0, 0))
         {
@@ -567,20 +549,20 @@ impl RasterChunk {
     }
 
     /// Scales the chunk by a factor using the nearest-neighbour algorithm.
-    pub fn nn_scale(&mut self, new_size: (usize, usize)) {
-        let (new_width, new_height) = new_size;
-
-        if new_width == self.width && new_height == self.height {
+    pub fn nn_scale(&mut self, new_size: Dimensions) {
+        if new_size == self.dimensions {
             return;
         }
 
-        let mut new_chunk = RasterChunk::new(new_width, new_height);
+        let mut new_chunk = RasterChunk::new(new_size.width, new_size.height);
 
-        for column in 0..new_width {
-            for row in 0..new_height {
-                let nearest = transform_point((column, row), (self.width, self.height), new_size);
+        for column in 0..new_size.width {
+            for row in 0..new_size.height {
+                let nearest = self
+                    .dimensions
+                    .transform_point((column, row).into(), new_size);
 
-                let source_index = self.get_index_from_position(nearest.into()).unwrap();
+                let source_index = self.get_index_from_position(nearest).unwrap();
                 let new_index = new_chunk
                     .get_index_from_position((column, row).into())
                     .unwrap();
@@ -591,21 +573,12 @@ impl RasterChunk {
         *self = new_chunk;
     }
 
-    /// The dimensions of a raster chunk in `(width, height)` format.
-    pub fn dimensions(&self) -> (usize, usize) {
-        (self.width, self.height)
-    }
-
     pub fn pixels(&self) -> &[Pixel] {
         &self.pixels
     }
 
-    pub fn width(&self) -> usize {
-        self.width
-    }
-
-    pub fn height(&self) -> usize {
-        self.height
+    pub fn dimensions(&self) -> Dimensions {
+        self.dimensions
     }
 }
 
@@ -820,9 +793,9 @@ mod tests {
         let shrunk = raster_window.shrink(1, 1, 1, 1).unwrap();
         let expected_shrunk = RasterWindow::new(&raster_chunk, (1, 1).into(), 6, 6).unwrap();
 
-        assert_eq!(shrunk.height, expected_shrunk.height);
+        assert_eq!(shrunk.dimensions.height, expected_shrunk.dimensions.height);
 
-        for row in 0..shrunk.height {
+        for row in 0..shrunk.dimensions.height {
             let shrunk_row = shrunk.get_row_slice(row).unwrap();
             let expected_row = expected_shrunk.get_row_slice(row).unwrap();
 
@@ -981,7 +954,10 @@ mod tests {
         let mut raster_chunk = RasterChunk::new(10, 10);
         raster_chunk.fill_rect(colors::red(), DrawPosition::from((0, 0)), 5, 5);
 
-        raster_chunk.nn_scale((20, 20));
+        raster_chunk.nn_scale(Dimensions {
+            width: 20,
+            height: 20,
+        });
 
         let mut expected = RasterChunk::new(20, 20);
         expected.fill_rect(colors::red(), DrawPosition::from((0, 0)), 10, 10);
@@ -994,7 +970,10 @@ mod tests {
         let mut raster_chunk = RasterChunk::new(20, 20);
         raster_chunk.fill_rect(colors::red(), DrawPosition::from((0, 0)), 10, 10);
 
-        raster_chunk.nn_scale((10, 10));
+        raster_chunk.nn_scale(Dimensions {
+            width: 10,
+            height: 10,
+        });
 
         let mut expected = RasterChunk::new(10, 10);
         expected.fill_rect(colors::red(), DrawPosition::from((0, 0)), 5, 5);
