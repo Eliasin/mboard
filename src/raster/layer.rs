@@ -226,8 +226,8 @@ impl RasterLayer {
         }
     }
 
-    /// Draws a `RasterWindow` onto the layer with the top left at the position provided.
-    fn blit(&mut self, top_left: (i64, i64), source: &RasterWindow) -> CanvasRect {
+    /// Composites a `RasterWindow` onto the layer with the top left at the position provided.
+    fn composite_over(&mut self, top_left: (i64, i64), source: &RasterWindow) -> CanvasRect {
         let canvas_rect = CanvasRect {
             top_left,
             width: source.width().try_into().unwrap(),
@@ -235,7 +235,6 @@ impl RasterLayer {
         };
 
         let chunk_rect = self.find_chunk_rect_in_canvas_rect(canvas_rect);
-        let chunk_size: i64 = self.chunk_size.try_into().unwrap();
 
         let mut writer = |raster_chunk: &mut RasterChunk,
                           chunk_rect_position: ChunkRectPosition| {
@@ -243,25 +242,28 @@ impl RasterLayer {
                 top_left_in_chunk,
                 width: _,
                 height: _,
-                x_chunk_offset,
-                y_chunk_offset,
-                x_pixel_offset: _,
-                y_pixel_offset: _,
+                x_chunk_offset: _,
+                y_chunk_offset: _,
+                x_pixel_offset,
+                y_pixel_offset,
             } = chunk_rect_position;
 
-            let pixel_offset: (i64, i64) =
-                (x_chunk_offset * chunk_size, y_chunk_offset * chunk_size);
+            let pixel_offset: (i64, i64) = (
+                x_pixel_offset.try_into().unwrap(),
+                y_pixel_offset.try_into().unwrap(),
+            );
 
             let top_left_in_chunk: (i64, i64) = (
                 top_left_in_chunk.0 .0.try_into().unwrap(),
                 top_left_in_chunk.0 .1.try_into().unwrap(),
             );
+
             let top_left_in_chunk: (i64, i64) = (
                 top_left_in_chunk.0 - pixel_offset.0,
-                top_left_in_chunk.0 - pixel_offset.1,
+                top_left_in_chunk.1 - pixel_offset.1,
             );
 
-            raster_chunk.blit(source, top_left_in_chunk.into());
+            raster_chunk.composite_over(source, top_left_in_chunk.into());
         };
 
         self.for_chunk_rect(&mut writer, chunk_rect);
@@ -291,7 +293,8 @@ impl RasterLayer {
 
                         let draw_chunk = RasterChunk::new_fill(pixel, width, height);
 
-                        raster_chunk.blit(&draw_chunk.as_window(), top_left_in_chunk.into());
+                        raster_chunk
+                            .composite_over(&draw_chunk.as_window(), top_left_in_chunk.into());
                     };
 
                 self.for_chunk_rect(&mut writer, chunk_rect);
@@ -303,7 +306,7 @@ impl RasterLayer {
                     .color(pixel)
                     .build();
 
-                Some(self.blit(rect.top_left, &oval.rasterize().as_window()))
+                Some(self.composite_over(rect.top_left, &oval.rasterize().as_window()))
             }
         }
     }
@@ -611,6 +614,75 @@ mod tests {
         expected.fill_rect(colors::red(), (4, 4).into(), 2, 2);
 
         expected.nn_scale((20, 20));
+
+        assert_raster_eq!(raster, expected);
+    }
+
+    #[test]
+    fn test_fill_oval_easy() {
+        let mut raster_layer = RasterLayer::new(30);
+        let view = CanvasView::new(30, 30);
+
+        let rect = CanvasRect {
+            top_left: (10, 10),
+            width: 10,
+            height: 10,
+        };
+
+        let red_oval = RasterLayerAction::fill_oval(rect, colors::red());
+        raster_layer.perform_action(red_oval);
+
+        let raster = raster_layer.rasterize(&view);
+
+        let mut expected = RasterChunk::new(30, 30);
+        let oval = Oval::build_from_bound(10, 10).color(colors::red()).build();
+        expected.composite_over(&oval.rasterize().as_window(), DrawPosition::from((10, 10)));
+
+        assert_raster_eq!(raster, expected);
+    }
+
+    #[test]
+    fn test_fill_oval_medium() {
+        let mut raster_layer = RasterLayer::new(30);
+        let view = CanvasView::new(30, 30);
+
+        let rect = CanvasRect {
+            top_left: (10, 15),
+            width: 10,
+            height: 10,
+        };
+
+        let red_oval = RasterLayerAction::fill_oval(rect, colors::red());
+        raster_layer.perform_action(red_oval);
+
+        let raster = raster_layer.rasterize(&view);
+
+        let mut expected = RasterChunk::new(30, 30);
+        let oval = Oval::build_from_bound(10, 10).color(colors::red()).build();
+        expected.composite_over(&oval.rasterize().as_window(), DrawPosition::from((10, 15)));
+
+        assert_raster_eq!(raster, expected);
+    }
+
+    #[test]
+    fn test_fill_oval_border() {
+        let mut raster_layer = RasterLayer::new(30);
+        let view = CanvasView::new(60, 60);
+
+        let rect = CanvasRect {
+            top_left: (25, 10),
+            width: 10,
+            height: 10,
+        };
+
+        let red_oval = RasterLayerAction::fill_oval(rect, colors::red());
+        raster_layer.perform_action(red_oval);
+
+        let raster = raster_layer.rasterize(&view);
+
+        let mut expected = RasterChunk::new(60, 60);
+        let oval = Oval::build_from_bound(10, 10).color(colors::red()).build();
+        expected.composite_over(&oval.rasterize().as_window(), DrawPosition::from((25, 10)));
 
         assert_raster_eq!(raster, expected);
     }

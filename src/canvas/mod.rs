@@ -1,4 +1,8 @@
-use crate::raster::{chunks::RasterChunk, pixels::colors, RasterLayer, RasterLayerAction};
+use crate::raster::{
+    chunks::{transform_point, RasterChunk},
+    pixels::colors,
+    RasterLayer, RasterLayerAction,
+};
 use enum_dispatch::enum_dispatch;
 
 /// A view positioned relative to a set of layers.
@@ -92,6 +96,27 @@ impl CanvasView {
     pub fn anchor(&self) -> (i64, i64) {
         self.top_left
     }
+
+    /// Transforms a point from view space to canvas space.
+    pub fn transform_view_to_canvas(&self, p: (usize, usize)) -> (i64, i64) {
+        let scaled_point = transform_point(
+            p,
+            (self.canvas_width, self.canvas_height),
+            (self.view_width, self.view_height),
+        );
+
+        let scaled_point: (i64, i64) = (
+            scaled_point.0.try_into().unwrap(),
+            scaled_point.1.try_into().unwrap(),
+        );
+
+        let translated_point: (i64, i64) = (
+            scaled_point.0 + self.top_left.0,
+            scaled_point.1 + self.top_left.1,
+        );
+
+        translated_point
+    }
 }
 
 /// A rectangle in canvas-space that can be used for operations
@@ -158,6 +183,21 @@ mod tests {
 
     #[cfg(test)]
     use super::*;
+
+    #[test]
+    fn test_transform_view_to_canvas() {
+        let mut view = CanvasView::new(10, 10);
+
+        view.translate((-5, -5));
+        assert_eq!(view.transform_view_to_canvas((5, 5)), (0, 0));
+        assert_eq!(view.transform_view_to_canvas((0, 5)), (-5, 0));
+
+        view.translate((5, 5));
+        view.resize_canvas_source((20, 20));
+        assert_eq!(view.transform_view_to_canvas((0, 1)), (0, 2));
+        assert_eq!(view.transform_view_to_canvas((5, 5)), (10, 10));
+        assert_eq!(view.transform_view_to_canvas((5, 1)), (10, 2));
+    }
 
     #[test]
     fn test_compositing_rasters() {

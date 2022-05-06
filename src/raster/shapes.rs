@@ -96,6 +96,7 @@ impl OvalBuilder {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Oval {
     half_width: f32,
     half_height: f32,
@@ -181,17 +182,15 @@ impl Polygon for Oval {
         let u = p as f32 / 255.0;
         let (r, g, b, a) = self.color.as_rgba();
 
-        let (r, g, b, a): (u8, u8, u8, u8) = (
-            (r as f32 * u).clamp(0.0, 255.0) as u8,
-            (g as f32 * u).clamp(0.0, 255.0) as u8,
-            (b as f32 * u).clamp(0.0, 255.0) as u8,
-            (a as f32 * u).clamp(0.0, 255.0) as u8,
-        );
+        let a = a as f32 * u.powf(1.5);
+
+        let (r, g, b, a): (u8, u8, u8, u8) = (r, g, b, a.clamp(0.0, 255.0) as u8);
 
         Pixel::new_rgba(r, g, b, a)
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Circle {
     oval: Oval,
     roughness: f32,
@@ -260,5 +259,18 @@ mod tests {
                 assert!(raster.pixels()[position].is_close(&Pixel::new_rgba(255, 255, 255, 0), 10));
             }
         }
+    }
+
+    #[test]
+    fn test_oval_builder() {
+        let oval_a = Oval::new(5.0, 2.0);
+        let expected_a = Oval::build(5.0, 2.0).build();
+
+        assert_eq!(oval_a, expected_a);
+
+        let oval_b = Oval::new_from_bound(1, 3);
+        let expected_b = Oval::build_from_bound(1, 3).build();
+
+        assert_eq!(oval_b, expected_b);
     }
 }

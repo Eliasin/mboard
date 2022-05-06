@@ -69,6 +69,22 @@ impl std::fmt::Display for InvalidPixelSliceSize {
     }
 }
 
+/// Transform a point from one dimension space to another, preserving the relative
+/// offset from the top-left.
+pub fn transform_point(
+    p: (usize, usize),
+    source_dimensions: (usize, usize),
+    dest_dimensions: (usize, usize),
+) -> (usize, usize) {
+    let x_stretch: f32 = source_dimensions.0 as f32 / dest_dimensions.0 as f32;
+    let y_stretch: f32 = source_dimensions.1 as f32 / dest_dimensions.1 as f32;
+
+    (
+        (p.0 as f32 * x_stretch).floor() as usize,
+        (p.1 as f32 * y_stretch).floor() as usize,
+    )
+}
+
 fn get_color_character_for_pixel(p: &Pixel) -> &'static str {
     let mut color_characters = vec![
         (colors::red(), "r"),
@@ -187,7 +203,7 @@ impl<'a> RasterWindow<'a> {
             return None;
         }
 
-        let new_top_left = self.top_left + PixelPosition::from((top, left));
+        let new_top_left = self.top_left + PixelPosition::from((left, top));
 
         let new_width = self.width - right - left;
         let new_height = self.height - bottom - top;
@@ -337,7 +353,6 @@ impl IndexableByPosition for RasterChunk {
 }
 
 type RowOperation = fn(&mut [Pixel], &[Pixel]) -> ();
-
 impl RasterChunk {
     /// Create a new raster chunk filled in with a pixel value.
     pub fn new_fill(pixel: Pixel, width: usize, height: usize) -> RasterChunk {
@@ -497,15 +512,13 @@ impl RasterChunk {
             for row_num in 0..shrunk_source.height {
                 let source_row = shrunk_source.get_row_slice(row_num);
 
-                let start = self
-                    .get_index_from_position(bounded_top_left + (0_usize, row_num))
-                    .unwrap();
-                let end = self
-                    .get_index_from_position(bounded_top_left + (shrunk_source.width - 1, row_num))
-                    .unwrap();
+                let row_start_position = bounded_top_left + (0_usize, row_num);
+                let row_start_index = self.get_index_from_position(row_start_position).unwrap();
+                let row_end_position = bounded_top_left + (shrunk_source.width - 1, row_num);
+                let row_end_index = self.get_index_from_position(row_end_position).unwrap();
 
                 if let Some(source_row) = source_row {
-                    let dest_slice = &mut self.pixels[start..end + 1];
+                    let dest_slice = &mut self.pixels[row_start_index..row_end_index + 1];
 
                     operation(dest_slice, source_row);
                 }
@@ -553,21 +566,6 @@ impl RasterChunk {
         });
     }
 
-    /// Finds the nearest neighbour of a pixel given some scale.
-    fn nearest_neighbour(
-        p: (usize, usize),
-        source_dimensions: (usize, usize),
-        dest_dimensions: (usize, usize),
-    ) -> (usize, usize) {
-        let x_stretch: f32 = source_dimensions.0 as f32 / dest_dimensions.0 as f32;
-        let y_stretch: f32 = source_dimensions.1 as f32 / dest_dimensions.1 as f32;
-
-        (
-            (p.0 as f32 * x_stretch).floor() as usize,
-            (p.1 as f32 * y_stretch).floor() as usize,
-        )
-    }
-
     /// Scales the chunk by a factor using the nearest-neighbour algorithm.
     pub fn nn_scale(&mut self, new_size: (usize, usize)) {
         let (new_width, new_height) = new_size;
@@ -580,11 +578,7 @@ impl RasterChunk {
 
         for column in 0..new_width {
             for row in 0..new_height {
-                let nearest = RasterChunk::nearest_neighbour(
-                    (column, row),
-                    (self.width, self.height),
-                    new_size,
-                );
+                let nearest = transform_point((column, row), (self.width, self.height), new_size);
 
                 let source_index = self.get_index_from_position(nearest.into()).unwrap();
                 let new_index = new_chunk
