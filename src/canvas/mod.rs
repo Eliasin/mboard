@@ -100,6 +100,34 @@ impl CanvasView {
 
         CanvasPosition::from_view_position(*self, scaled_point)
     }
+
+    /// Attempt to transform a position in canvas space to a position
+    /// in view space. Canvas positions not in view will map to `None`;
+    pub fn transform_canvas_to_view(&self, p: CanvasPosition) -> Option<PixelPosition> {
+        let translated_point = p.translate((-self.top_left.0 .0, -self.top_left.0 .1));
+
+        let point_past_top_left = translated_point.0 .0 < 0 || translated_point.0 .1 < 0;
+        let point_past_bottom_right = translated_point.0 .0 >= self.canvas_dimensions.width as i64
+            || translated_point.0 .1 >= self.canvas_dimensions.height as i64;
+        if point_past_top_left || point_past_bottom_right {
+            None
+        } else {
+            Some(self.view_dimensions.transform_point(
+                PixelPosition((
+                    translated_point.0 .0 as usize,
+                    translated_point.0 .1 as usize,
+                )),
+                self.canvas_dimensions,
+            ))
+        }
+    }
+}
+
+/// A rectangle within a view configuration.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct ViewRect {
+    pub top_left: PixelPosition,
+    pub dimensions: Dimensions,
 }
 
 /// A rectangle in canvas-space that can be used for operations
@@ -108,6 +136,34 @@ impl CanvasView {
 pub struct CanvasRect {
     pub top_left: CanvasPosition,
     pub dimensions: Dimensions,
+}
+
+impl CanvasRect {
+    pub fn at_origin(width: usize, height: usize) -> CanvasRect {
+        CanvasRect {
+            top_left: CanvasPosition((0, 0)),
+            dimensions: Dimensions { width, height },
+        }
+    }
+
+    pub fn to_view_rect(&self, view: &CanvasView) -> Option<ViewRect> {
+        let top_left_in_view = view.transform_canvas_to_view(self.top_left)?;
+
+        let transformed_dimensions = view.view_dimensions.transform_point(
+            PixelPosition((self.dimensions.width - 1, self.dimensions.height - 1)),
+            view.canvas_dimensions,
+        );
+
+        let dimensions = Dimensions {
+            width: transformed_dimensions.0 .0 + 1,
+            height: transformed_dimensions.0 .1 + 1,
+        };
+
+        Some(ViewRect {
+            top_left: top_left_in_view,
+            dimensions,
+        })
+    }
 }
 
 /// A logical layer in the canvas. Layers can be composited ontop of eachother.
@@ -119,6 +175,7 @@ pub enum LayerImplementation {
 #[enum_dispatch(LayerImplementation)]
 pub trait Layer {
     fn rasterize(&mut self, view: &CanvasView) -> RasterChunk;
+    fn rasterize_canvas_rect(&mut self, canvas_rect: CanvasRect) -> RasterChunk;
 }
 
 /// A collection of layers that can be rendered.
@@ -129,14 +186,25 @@ pub struct Canvas {
 
 impl Canvas {
     pub fn render(&mut self, view: &CanvasView) -> RasterChunk {
-        let Dimensions {
-            width: view_width,
-            height: view_height,
-        } = view.view_dimensions;
-        let mut base = RasterChunk::new_fill(colors::white(), view_width, view_height);
+        let mut raster = self.render_canvas_rect(CanvasRect {
+            top_left: view.top_left,
+            dimensions: view.canvas_dimensions,
+        });
+
+        raster.nn_scale(view.view_dimensions);
+
+        raster
+    }
+
+    pub fn render_canvas_rect(&mut self, canvas_rect: CanvasRect) -> RasterChunk {
+        let Dimensions { width, height } = canvas_rect.dimensions;
+        let mut base = RasterChunk::new_fill(colors::white(), width, height);
 
         for layer in &mut self.layers {
-            base.composite_over(&layer.rasterize(view).as_window(), (0, 0).into());
+            base.composite_over(
+                &layer.rasterize_canvas_rect(canvas_rect).as_window(),
+                (0, 0).into(),
+            );
         }
 
         base
@@ -246,5 +314,58 @@ mod tests {
                 assert!(colors::blue().is_close(&pixel, 10));
             }
         }
+    }
+
+    #[test]
+    fn test_view_rect_conversion_easy() {
+        let mut view = CanvasView::new(10, 15);
+        view.translate((5, 5));
+
+        let canvas_rect = CanvasRect {
+            top_left: CanvasPosition((10, 10)),
+            dimensions: Dimensions {
+                width: 5,
+                height: 10,
+            },
+        };
+
+        assert_eq!(
+            canvas_rect.to_view_rect(&view),
+            Some(ViewRect {
+                top_left: PixelPosition((5, 5)),
+                dimensions: Dimensions {
+                    width: 5,
+                    height: 10
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn test_view_rect_conversion_medium() {
+        let mut view = CanvasView::new(10, 20);
+        view.canvas_dimensions = Dimensions {
+            width: 20,
+            height: 40,
+        };
+
+        let canvas_rect = CanvasRect {
+            top_left: CanvasPosition((12, 10)),
+            dimensions: Dimensions {
+                width: 8,
+                height: 10,
+            },
+        };
+
+        assert_eq!(
+            canvas_rect.to_view_rect(&view),
+            Some(ViewRect {
+                top_left: PixelPosition((6, 5)),
+                dimensions: Dimensions {
+                    width: 4,
+                    height: 5
+                }
+            })
+        );
     }
 }

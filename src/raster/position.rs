@@ -10,6 +10,12 @@ use std::{convert::TryInto, ops::Add};
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct PixelPosition(pub (usize, usize));
 
+impl PixelPosition {
+    pub fn translate(&self, v: (usize, usize)) -> PixelPosition {
+        PixelPosition((self.0 .0 + v.1, self.0 .1 + v.0))
+    }
+}
+
 /// An position at which to draw something. Does not have to be inside the
 /// destination pixel collection.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -51,11 +57,11 @@ pub struct Dimensions {
 }
 
 impl Dimensions {
-    /// Transform a point from this dimension space to another, preserving the relative
+    /// Transform a point from another dimension space to this one, preserving the relative
     /// offset from the top-left.
-    pub fn transform_point(&self, p: PixelPosition, dest_dimensions: Dimensions) -> PixelPosition {
-        let x_stretch: f32 = self.width as f32 / dest_dimensions.width as f32;
-        let y_stretch: f32 = self.height as f32 / dest_dimensions.height as f32;
+    pub fn transform_point(&self, p: PixelPosition, src_dimensions: Dimensions) -> PixelPosition {
+        let x_stretch: f32 = self.width as f32 / src_dimensions.width as f32;
+        let y_stretch: f32 = self.height as f32 / src_dimensions.height as f32;
 
         PixelPosition((
             (p.0 .0 as f32 * x_stretch).floor() as usize,

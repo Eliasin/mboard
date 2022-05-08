@@ -144,15 +144,6 @@ impl RasterLayer {
         }
     }
 
-    fn find_chunk_rect_in_view(&self, view: &CanvasView) -> ChunkRect {
-        let canvas_rect = CanvasRect {
-            top_left: view.top_left,
-            dimensions: view.canvas_dimensions,
-        };
-
-        self.find_chunk_rect_in_canvas_rect(canvas_rect)
-    }
-
     fn for_chunk_rect<F>(&mut self, r: &mut F, chunk_rect: ChunkRect)
     where
         F: FnMut(&mut RasterChunk, ChunkRectPosition),
@@ -305,7 +296,9 @@ impl RasterLayer {
                 .color(pixel)
                 .build();
 
-                Some(self.composite_over(rect.top_left, &oval.rasterize().as_window()))
+                let canvas_rect = self.composite_over(rect.top_left, &oval.rasterize().as_window());
+
+                Some(canvas_rect)
             }
         }
     }
@@ -313,12 +306,23 @@ impl RasterLayer {
 
 impl Layer for RasterLayer {
     fn rasterize(&mut self, view: &CanvasView) -> RasterChunk {
-        let chunk_rect = self.find_chunk_rect_in_view(view);
+        let mut raster = self.rasterize_canvas_rect(CanvasRect {
+            top_left: view.top_left,
+            dimensions: view.canvas_dimensions,
+        });
+
+        raster.nn_scale(view.view_dimensions);
+
+        raster
+    }
+
+    fn rasterize_canvas_rect(&mut self, canvas_rect: CanvasRect) -> RasterChunk {
+        let chunk_rect = self.find_chunk_rect_in_canvas_rect(canvas_rect);
 
         let Dimensions {
             width: view_width,
             height: view_height,
-        } = view.canvas_dimensions;
+        } = canvas_rect.dimensions;
         let mut raster_result = RasterChunk::new(view_width, view_height);
 
         let mut rasterizer = |raster_chunk: &mut RasterChunk,
@@ -346,8 +350,6 @@ impl Layer for RasterLayer {
 
         self.for_chunk_rect(&mut rasterizer, chunk_rect);
 
-        raster_result.nn_scale(view.view_dimensions);
-
         raster_result
     }
 }
@@ -365,10 +367,10 @@ mod tests {
     fn test_chunk_visibility_easy() {
         let raster_layer = RasterLayer::new(10);
 
-        let mut view = CanvasView::new(10, 10);
+        let mut canvas_rect = CanvasRect::at_origin(10, 10);
 
         assert_eq!(
-            raster_layer.find_chunk_rect_in_view(&view),
+            raster_layer.find_chunk_rect_in_canvas_rect(canvas_rect),
             ChunkRect {
                 top_left_chunk: ChunkPosition((0, 0)),
                 chunk_dimensions: Dimensions {
@@ -380,10 +382,10 @@ mod tests {
             }
         );
 
-        view.translate((-5, -2));
+        canvas_rect.top_left = CanvasPosition((-5, -2));
 
         assert_eq!(
-            raster_layer.find_chunk_rect_in_view(&view),
+            raster_layer.find_chunk_rect_in_canvas_rect(canvas_rect),
             ChunkRect {
                 top_left_chunk: ChunkPosition((-1, -1)),
                 chunk_dimensions: Dimensions {
@@ -400,11 +402,11 @@ mod tests {
     fn test_chunk_visibility_medium() {
         let raster_layer = RasterLayer::new(1024);
 
-        let mut view = CanvasView::new(2000, 2000);
-        view.translate((-500, -500));
+        let mut canvas_rect = CanvasRect::at_origin(2000, 2000);
+        canvas_rect.top_left = CanvasPosition((-500, -500));
 
         assert_eq!(
-            raster_layer.find_chunk_rect_in_view(&view),
+            raster_layer.find_chunk_rect_in_canvas_rect(canvas_rect),
             ChunkRect {
                 top_left_chunk: ChunkPosition((-1, -1)),
                 chunk_dimensions: Dimensions {
@@ -421,11 +423,11 @@ mod tests {
     fn test_chunk_visibility_hard() {
         let raster_layer = RasterLayer::new(512);
 
-        let mut view = CanvasView::new(2000, 1000);
-        view.translate((-500, -1000));
+        let mut canvas_rect = CanvasRect::at_origin(2000, 1000);
+        canvas_rect.top_left = CanvasPosition((-500, -1000));
 
         assert_eq!(
-            raster_layer.find_chunk_rect_in_view(&view),
+            raster_layer.find_chunk_rect_in_canvas_rect(canvas_rect),
             ChunkRect {
                 top_left_chunk: ChunkPosition((-1, -2)),
                 chunk_dimensions: Dimensions {
