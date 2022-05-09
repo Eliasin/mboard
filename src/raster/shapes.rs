@@ -60,8 +60,8 @@ const OVAL_PADDING: f32 = 2.2;
 const HALF_OVAL_PADDING: f32 = OVAL_PADDING / 2.0;
 
 pub struct OvalBuilder {
-    width: f32,
-    height: f32,
+    half_width: f32,
+    half_height: f32,
     roughness: Option<f32>,
     color: Option<Pixel>,
 }
@@ -69,8 +69,8 @@ pub struct OvalBuilder {
 impl OvalBuilder {
     pub fn new(width: f32, height: f32) -> OvalBuilder {
         OvalBuilder {
-            width,
-            height,
+            half_width: width,
+            half_height: height,
             roughness: None,
             color: None,
         }
@@ -87,20 +87,18 @@ impl OvalBuilder {
     }
 
     pub fn build(&self) -> Oval {
-        Oval {
-            half_width: self.width,
-            half_height: self.height,
-            roughness: self.roughness.unwrap_or(10.0),
-            color: self.color.unwrap_or_else(colors::black),
-        }
+        let mut oval = Oval::new(self.half_width, self.half_height);
+        oval.roughness = (self.roughness.unwrap_or(10.0) * 10.0) as u32;
+        oval.color = self.color.unwrap_or_else(colors::black);
+        oval
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct Oval {
-    half_width: f32,
-    half_height: f32,
-    roughness: f32,
+    half_width: u32,
+    half_height: u32,
+    roughness: u32,
     color: Pixel,
 }
 
@@ -109,9 +107,9 @@ impl Oval {
     /// may exactly reflect this size to account for antialiasing.
     pub fn new(half_width: f32, half_height: f32) -> Oval {
         Oval {
-            half_width,
-            half_height,
-            roughness: 10.0,
+            half_width: (half_width * 10.0) as u32,
+            half_height: (half_height * 10.0) as u32,
+            roughness: (10.0 * 10.0) as u32,
             color: colors::black(),
         }
     }
@@ -144,37 +142,46 @@ impl Oval {
     }
 
     pub fn half_width(&self) -> f32 {
-        self.half_width
+        self.half_width as f32 / 10.0
     }
 
     pub fn half_height(&self) -> f32 {
-        self.half_height
+        self.half_height as f32 / 10.0
     }
 }
 
 impl Polygon for Oval {
     fn bounding_box(&self) -> (usize, usize) {
-        let width: usize = (self.half_width * OVAL_PADDING).ceil() as usize + 1;
-        let height: usize = (self.half_height * OVAL_PADDING).ceil() as usize + 1;
+        let (half_width, half_height) = (
+            self.half_width as f32 / 10.0,
+            self.half_height as f32 / 10.0,
+        );
+        let width: usize = (half_width * OVAL_PADDING).ceil() as usize + 1;
+        let height: usize = (half_height * OVAL_PADDING).ceil() as usize + 1;
 
         (width, height)
     }
 
     fn inside_proportion(&self, p: &PixelPosition) -> u8 {
+        let (half_width, half_height) = (
+            self.half_width as f32 / 10.0,
+            self.half_height as f32 / 10.0,
+        );
+        let roughness = self.roughness as f32 / 10.0;
+
         let origin = (
-            self.half_width * HALF_OVAL_PADDING,
-            self.half_height * HALF_OVAL_PADDING,
+            half_width * HALF_OVAL_PADDING,
+            half_height * HALF_OVAL_PADDING,
         );
 
         let (x, y): (f32, f32) = (p.0 .0 as f32 - origin.0, p.0 .1 as f32 - origin.1);
 
-        let dist =
-            f32::sqrt(x.powi(2) / self.half_width.powi(2) + y.powi(2) / self.half_height.powi(2));
+        let dist = f32::sqrt(x.powi(2) / half_width.powi(2) + y.powi(2) / half_height.powi(2));
 
         if dist < 1.0 {
             255
         } else {
-            ((1.0 - (dist - 1.0).mul(self.roughness)) * 255.0).clamp(0.0, 255.0) as u8
+            ((1.0 - (dist - 1.0).mul(roughness)) * 255.0).clamp(0.0, 255.0) as u8
         }
     }
 
@@ -193,30 +200,27 @@ impl Polygon for Oval {
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Circle {
     oval: Oval,
-    roughness: f32,
+    roughness: u32,
 }
 
 impl Circle {
     pub fn new(radius: f32) -> Circle {
-        Circle {
-            oval: Oval::new(radius, radius),
-            roughness: 10.0,
-        }
+        Circle::new_roughness(radius, 10.0)
     }
 
     pub fn new_roughness(radius: f32, roughness: f32) -> Circle {
         Circle {
             oval: Oval::new(radius, radius),
-            roughness,
+            roughness: (roughness * 10.0) as u32,
         }
     }
 
     pub fn radius(&self) -> f32 {
-        self.oval.half_width
+        self.oval.half_width as f32 / 10.0
     }
 
     pub fn roughness(&self) -> f32 {
-        self.roughness
+        self.roughness as f32 / 10.0
     }
 }
 

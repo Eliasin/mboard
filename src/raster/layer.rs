@@ -4,7 +4,7 @@ use super::{
     position::{Dimensions, DrawPosition, PixelPosition},
 };
 use crate::{
-    canvas::{CanvasPosition, CanvasRect, CanvasView, Layer},
+    canvas::{CanvasPosition, CanvasRect, CanvasView, Layer, ShapeCache},
     raster::shapes::{Oval, RasterPolygon},
 };
 use std::{
@@ -256,6 +256,57 @@ impl RasterLayer {
         self.for_chunk_rect(&mut writer, chunk_rect);
 
         canvas_rect
+    }
+
+    /// Performs a raster canvas action, returning the canvas rect that
+    /// has been altered by it.
+    pub fn perform_action_with_cache(
+        &mut self,
+        action: RasterLayerAction,
+        shape_cache: &mut ShapeCache,
+    ) -> Option<CanvasRect> {
+        use RasterLayerAction::*;
+        match action {
+            FillRect(canvas_rect, pixel) => {
+                let chunk_rect = self.find_chunk_rect_in_canvas_rect(canvas_rect);
+
+                let mut writer =
+                    |raster_chunk: &mut RasterChunk, chunk_rect_position: ChunkRectPosition| {
+                        let ChunkRectPosition {
+                            top_left_in_chunk,
+                            width,
+                            height,
+                            x_chunk_offset: _,
+                            y_chunk_offset: _,
+                            x_pixel_offset: _,
+                            y_pixel_offset: _,
+                        } = chunk_rect_position;
+
+                        let draw_chunk = RasterChunk::new_fill(pixel, width, height);
+
+                        raster_chunk
+                            .composite_over(&draw_chunk.as_window(), top_left_in_chunk.into());
+                    };
+
+                self.for_chunk_rect(&mut writer, chunk_rect);
+
+                Some(canvas_rect)
+            }
+            FillOval(rect, pixel) => {
+                let oval = Oval::build_from_bound(
+                    rect.dimensions.width as u32,
+                    rect.dimensions.height as u32,
+                )
+                .color(pixel)
+                .build();
+
+                let oval_raster = shape_cache.get_oval(oval);
+
+                let canvas_rect = self.composite_over(rect.top_left, &oval_raster.as_window());
+
+                Some(canvas_rect)
+            }
+        }
     }
 
     /// Performs a raster canvas action, returning the canvas rect that

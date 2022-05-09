@@ -2,7 +2,7 @@
 
 use std::convert::TryInto;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Pixel(pub u32);
 
 impl Pixel {

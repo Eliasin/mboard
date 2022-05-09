@@ -7,6 +7,9 @@ use crate::raster::{
 };
 use enum_dispatch::enum_dispatch;
 
+mod cache;
+pub use cache::ShapeCache;
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct CanvasPosition(pub (i64, i64));
 
@@ -182,6 +185,7 @@ pub trait Layer {
 #[derive(Default)]
 pub struct Canvas {
     layers: Vec<LayerImplementation>,
+    shape_cache: ShapeCache,
 }
 
 impl Canvas {
@@ -222,7 +226,9 @@ impl Canvas {
         use LayerImplementation::*;
         if let Some(layer) = self.layers.get_mut(layer_num) {
             match layer {
-                RasterLayer(raster_layer) => raster_layer.perform_action(action),
+                RasterLayer(raster_layer) => {
+                    raster_layer.perform_action_with_cache(action, &mut self.shape_cache)
+                }
             }
         } else {
             None
