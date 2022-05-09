@@ -167,6 +167,30 @@ impl CanvasRect {
             dimensions,
         })
     }
+
+    pub fn spanning_rect(&self, other: &CanvasRect) -> CanvasRect {
+        let top = self.top_left.0 .1.min(other.top_left.0 .1);
+        let left = self.top_left.0 .0.min(other.top_left.0 .0);
+
+        let bottom_right = self
+            .top_left
+            .translate((self.dimensions.width as i64, self.dimensions.height as i64));
+        let other_bottom_right = other.top_left.translate((
+            other.dimensions.width as i64,
+            other.dimensions.height as i64,
+        ));
+
+        let bottom = bottom_right.0 .1.max(other_bottom_right.0 .1);
+        let right = bottom_right.0 .0.max(other_bottom_right.0 .0);
+
+        CanvasRect {
+            top_left: CanvasPosition((left, top)),
+            dimensions: Dimensions {
+                width: (right - left) as usize,
+                height: (bottom - top) as usize,
+            },
+        }
+    }
 }
 
 /// A logical layer in the canvas. Layers can be composited ontop of eachother.
@@ -372,6 +396,63 @@ mod tests {
                     height: 5
                 }
             })
+        );
+    }
+
+    #[test]
+    fn test_spanning_canvas_rect() {
+        let rect_a = CanvasRect {
+            top_left: CanvasPosition((3, 4)),
+            dimensions: Dimensions {
+                width: 2,
+                height: 6,
+            },
+        };
+
+        let rect_b = CanvasRect {
+            top_left: CanvasPosition((5, 8)),
+            dimensions: Dimensions {
+                width: 1,
+                height: 2,
+            },
+        };
+
+        assert_eq!(
+            rect_a.spanning_rect(&rect_b),
+            CanvasRect {
+                top_left: CanvasPosition((3, 4)),
+                dimensions: Dimensions {
+                    width: 3,
+                    height: 6
+                }
+            }
+        );
+
+        let rect_c = CanvasRect {
+            top_left: CanvasPosition((9, 2)),
+            dimensions: Dimensions {
+                width: 3,
+                height: 5,
+            },
+        };
+
+        let rect_d = CanvasRect {
+            top_left: CanvasPosition((10, 1)),
+            dimensions: Dimensions {
+                width: 3,
+                height: 7,
+            },
+        };
+
+        assert_eq!(
+            rect_c.spanning_rect(&rect_d),
+            CanvasRect {
+                top_left: CanvasPosition((9, 1)),
+                dimensions: Dimensions {
+                    width: 4,
+                    height: 7
+                }
+            }
         );
     }
 }
