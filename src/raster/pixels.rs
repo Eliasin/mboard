@@ -53,6 +53,16 @@ impl Pixel {
         )
     }
 
+    #[inline(always)]
+    fn as_rgba_u32(&self) -> (u32, u32, u32, u32) {
+        let r = self.0 & 0xFF;
+        let g = (self.0 & 0xFF00) >> 8;
+        let b = (self.0 & 0xFF0000) >> 16;
+        let a = (self.0 & 0xFF000000) >> 24;
+
+        (r, g, b, a)
+    }
+
     /// Get the RGBA values of a pixel as normalized components in
     /// the range [0,1].
     pub fn as_norm_rgba(&self) -> (f32, f32, f32, f32) {
@@ -65,29 +75,35 @@ impl Pixel {
         )
     }
 
-    fn composite_norm_component(c_a: f32, a_a: f32, c_b: f32, c: f32, a_o: f32) -> f32 {
-        let w = c_a * a_a + c_b * c;
+    #[inline(always)]
+    fn composite_alpha(a1: u32, a2: u32) -> u32 {
+        (a1 + a2 - ((a1 * a2) >> 8)).min(255)
+    }
 
-        w / a_o
+    #[inline(always)]
+    fn composite_norm_component(c1: u32, a1: u32, c2: u32, a2: u32, a_o: u32) -> u32 {
+        if a_o == 0 {
+            return 255;
+        }
+
+        ((c1 * a1 + c2 * a2 - ((c2 * a2 * a1) >> 8)) / a_o).min(255)
     }
 
     /// Composes another pixel over this one.
     pub fn composite_over(&mut self, over: &Self) {
-        let (a_r, a_g, a_b, a_a) = over.as_norm_rgba();
-        let (b_r, b_g, b_b, b_a) = self.as_norm_rgba();
+        let (r1, g1, b1, a1) = over.as_rgba_u32();
+        let (r2, g2, b2, a2) = self.as_rgba_u32();
 
-        let c = b_a * (1.0 - a_a);
+        let a_o = Pixel::composite_alpha(a1, a2);
+        let a_o_u32 = a_o as u32;
 
-        let a_o: f32 = a_a + c;
-
-        let new_pixel = Pixel::new_rgba_norm(
-            Pixel::composite_norm_component(a_r, a_a, b_r, c, a_o),
-            Pixel::composite_norm_component(a_g, a_a, b_g, c, a_o),
-            Pixel::composite_norm_component(a_b, a_a, b_b, c, a_o),
-            a_o,
+        let (nr, ng, nb) = (
+            Pixel::composite_norm_component(r1, a1, r2, a2, a_o_u32),
+            Pixel::composite_norm_component(g1, a1, g2, a2, a_o_u32),
+            Pixel::composite_norm_component(b1, a1, b2, a2, a_o_u32),
         );
 
-        *self = new_pixel;
+        self.0 = nr + (ng << 8) + (nb << 16) + (a_o << 24);
     }
 
     /// Returns whether a pixel is `close` to another. A pixel is `close` to
