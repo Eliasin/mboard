@@ -332,4 +332,75 @@ impl RasterChunk {
     pub fn dimensions(&self) -> Dimensions {
         self.dimensions
     }
+
+    /// Shift the pixels in a raster chunk horizontally to the left. Pixels
+    /// are shifted into from `outside` the chunk have unspecified values.
+    pub fn horizontal_shift_left(&mut self, shift: usize) {
+        if shift > self.dimensions.width {
+            // Everything is shifted in from outside, so the whole
+            // chunk is unspecified and we can just return now
+            return;
+        }
+
+        let num_pixels_in_dest_row = self.dimensions.width - shift;
+
+        let shift_start_column = shift;
+
+        for row in 0..self.dimensions.height {
+            let row_start_position = row * self.dimensions.width;
+
+            let shift_start_position = row_start_position + shift_start_column;
+            let shift_end_position = shift_start_position + num_pixels_in_dest_row;
+
+            self.pixels
+                .copy_within(shift_start_position..shift_end_position, row_start_position);
+        }
+    }
+
+    /// Shift the pixels in a raster chunk horizontally to the right. Pixels
+    /// are shifted into from `outside` the chunk have unspecified values.
+    pub fn horizontal_shift_right(&mut self, shift: usize) {
+        if shift > self.dimensions.width {
+            // Everything is shifted in from outside, so the whole
+            // chunk is unspecified and we can just return now
+            return;
+        }
+
+        let num_pixels_in_dest_row = self.dimensions.width - shift;
+
+        for row in 0..self.dimensions.height {
+            let row_start_position = row * self.dimensions.width;
+
+            let shift_start_position = row_start_position;
+            let shift_end_position = shift_start_position + num_pixels_in_dest_row;
+
+            self.pixels.copy_within(
+                shift_start_position..shift_end_position,
+                row_start_position + shift,
+            );
+        }
+    }
+
+    /// Shift the pixels in a raster chunk vertically down. Pixels
+    /// are shifted into from `outside` the chunk have unspecified values.
+    pub fn vertical_shift_down(&mut self, shift: usize) {
+        if shift == 0 {
+            return;
+        }
+
+        let shift_end = self.pixels.len() - shift * self.dimensions.width;
+        self.pixels
+            .copy_within(0..shift_end, shift * self.dimensions.width);
+    }
+
+    /// Shift the pixels in a raster chunk vertically up. Pixels
+    /// are shifted into from `outside` the chunk have unspecified values.
+    pub fn vertical_shift_up(&mut self, shift: usize) {
+        if shift == 0 {
+            return;
+        }
+
+        let shift_start = shift * self.dimensions.width;
+        self.pixels.copy_within(shift_start..self.pixels.len(), 0);
+    }
 }

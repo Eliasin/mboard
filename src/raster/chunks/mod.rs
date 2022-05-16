@@ -24,6 +24,8 @@ mod tests {
     #[cfg(test)]
     use crate::raster::position::DrawPosition;
     #[cfg(test)]
+    use crate::raster::position::PixelPosition;
+    #[cfg(test)]
     use crate::raster::Pixel;
 
     #[cfg(test)]
@@ -443,5 +445,56 @@ mod tests {
         expected.fill_rect(colors::red(), DrawPosition::from((0, 0)), 5, 5);
 
         assert_raster_eq!(raster_chunk, expected);
+    }
+
+    #[test]
+    fn test_raster_chunk_shift() {
+        let mut raster_a = RasterChunk::new(10, 10);
+        raster_a.fill_rect(colors::red(), DrawPosition((4, 2)), 2, 3);
+
+        raster_a.horizontal_shift_left(2);
+
+        let shifted_a = RasterWindow::new(&raster_a, PixelPosition((2, 2)), 2, 3)
+            .unwrap()
+            .to_chunk();
+
+        let expected_a = RasterChunk::new_fill(colors::red(), 2, 3);
+        assert_raster_eq!(shifted_a, expected_a);
+
+        let mut raster_b = RasterChunk::new(10, 10);
+        raster_b.fill_rect(colors::blue(), DrawPosition((3, 4)), 1, 4);
+
+        raster_b.horizontal_shift_right(2);
+
+        let shifted_b = RasterWindow::new(&raster_b, PixelPosition((5, 4)), 1, 4)
+            .unwrap()
+            .to_chunk();
+
+        let expected_b = RasterChunk::new_fill(colors::blue(), 1, 4);
+        assert_raster_eq!(shifted_b, expected_b);
+
+        let mut raster_c = RasterChunk::new(10, 10);
+        raster_c.fill_rect(colors::green(), DrawPosition((1, 2)), 2, 4);
+
+        raster_c.vertical_shift_down(3);
+
+        let shifted_c = RasterWindow::new(&raster_c, PixelPosition((1, 5)), 2, 4)
+            .unwrap()
+            .to_chunk();
+
+        let expected_c = RasterChunk::new_fill(colors::green(), 2, 4);
+        assert_raster_eq!(shifted_c, expected_c);
+
+        let mut raster_d = RasterChunk::new(10, 10);
+        raster_d.fill_rect(colors::white(), DrawPosition((6, 8)), 3, 1);
+
+        raster_d.vertical_shift_up(3);
+
+        let shifted_d = RasterWindow::new(&raster_d, PixelPosition((6, 5)), 3, 1)
+            .unwrap()
+            .to_chunk();
+
+        let expected_d = RasterChunk::new_fill(colors::white(), 3, 1);
+        assert_raster_eq!(shifted_d, expected_d);
     }
 }
