@@ -10,6 +10,8 @@ use enum_dispatch::enum_dispatch;
 mod cache;
 pub use cache::ShapeCache;
 
+use self::cache::CanvasRasterizationCache;
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct CanvasPosition(pub (i64, i64));
 
@@ -172,13 +174,8 @@ impl CanvasRect {
         let top = self.top_left.0 .1.min(other.top_left.0 .1);
         let left = self.top_left.0 .0.min(other.top_left.0 .0);
 
-        let bottom_right = self
-            .top_left
-            .translate((self.dimensions.width as i64, self.dimensions.height as i64));
-        let other_bottom_right = other.top_left.translate((
-            other.dimensions.width as i64,
-            other.dimensions.height as i64,
-        ));
+        let bottom_right = self.bottom_right();
+        let other_bottom_right = other.bottom_right();
 
         let bottom = bottom_right.0 .1.max(other_bottom_right.0 .1);
         let right = bottom_right.0 .0.max(other_bottom_right.0 .0);
@@ -189,6 +186,40 @@ impl CanvasRect {
                 width: (right - left) as usize,
                 height: (bottom - top) as usize,
             },
+        }
+    }
+
+    /// The bottom right of a canvas rect.
+    pub fn bottom_right(&self) -> CanvasPosition {
+        self.top_left
+            .translate((self.dimensions.width as i64, self.dimensions.height as i64))
+    }
+
+    /// Whether or not this canvas rect fully contains another.
+    pub fn contains(&self, other: &CanvasRect) -> bool {
+        self.contains_with_offset(other).is_some()
+    }
+
+    /// The offset of a contained rect to this rect.
+    pub fn contains_with_offset(&self, other: &CanvasRect) -> Option<PixelPosition> {
+        if self.top_left.0 .0 > other.top_left.0 .0 {
+            None
+        } else if self.top_left.0 .1 > other.top_left.0 .1 {
+            None
+        } else {
+            let bottom_right = self.bottom_right();
+            let other_bottom_right = other.bottom_right();
+
+            if bottom_right.0 .0 < other_bottom_right.0 .0 {
+                None
+            } else if bottom_right.0 .1 < other_bottom_right.0 .1 {
+                None
+            } else {
+                Some(PixelPosition::from((
+                    (other.top_left.0 .0 - self.top_left.0 .0) as usize,
+                    (other.top_left.0 .1 - self.top_left.0 .1) as usize,
+                )))
+            }
         }
     }
 }
@@ -210,6 +241,7 @@ pub trait Layer {
 pub struct Canvas {
     layers: Vec<LayerImplementation>,
     shape_cache: ShapeCache,
+    rasterization_cache: Option<CanvasRasterizationCache>,
 }
 
 impl Canvas {
@@ -224,11 +256,14 @@ impl Canvas {
         raster
     }
 
-    pub fn render_canvas_rect(&mut self, canvas_rect: CanvasRect) -> RasterChunk {
+    fn rasterize_canvas_rect(
+        layers: &mut Vec<LayerImplementation>,
+        canvas_rect: CanvasRect,
+    ) -> RasterChunk {
         let Dimensions { width, height } = canvas_rect.dimensions;
         let mut base = RasterChunk::new_fill(colors::white(), width, height);
 
-        for layer in &mut self.layers {
+        for layer in layers {
             base.composite_over(
                 &layer.rasterize_canvas_rect(canvas_rect).as_window(),
                 (0, 0).into(),
@@ -236,6 +271,33 @@ impl Canvas {
         }
 
         base
+    }
+
+    pub fn render_canvas_rect(&mut self, canvas_rect: CanvasRect) -> RasterChunk {
+        match &mut self.rasterization_cache {
+            Some(rasterization_cache) => {
+                let cache_result = rasterization_cache.get_chunk(&canvas_rect);
+
+                use cache::CanvasRasterizationCacheResult::*;
+                match cache_result {
+                    Cached(cached_chunk) => cached_chunk.to_chunk(),
+                    NeedsPartialRender(partial_render_request) => partial_render_request
+                        .resolve_with_rasterizer(&mut |canvas_rect| {
+                            Canvas::rasterize_canvas_rect(&mut self.layers, canvas_rect)
+                        })
+                        .to_chunk(),
+                }
+            }
+            None => {
+                let rasterized_chunk = Canvas::rasterize_canvas_rect(&mut self.layers, canvas_rect);
+                self.rasterization_cache = Some(CanvasRasterizationCache::new(
+                    canvas_rect,
+                    rasterized_chunk.clone(),
+                ));
+
+                rasterized_chunk
+            }
+        }
     }
 
     pub fn add_layer(&mut self, layer: LayerImplementation) {

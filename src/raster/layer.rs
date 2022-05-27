@@ -1,6 +1,6 @@
 use super::{
     chunks::{RasterChunk, RasterWindow},
-    pixels::Pixel,
+    pixels::{colors, Pixel},
     position::{Dimensions, DrawPosition, PixelPosition},
 };
 use crate::{
@@ -17,6 +17,7 @@ use std::{
 pub struct RasterLayer {
     chunk_size: usize,
     chunks: HashMap<ChunkPosition, RasterChunk>,
+    blank_chunk: RasterChunk,
 }
 
 impl RasterLayer {
@@ -24,6 +25,7 @@ impl RasterLayer {
         RasterLayer {
             chunk_size,
             chunks: HashMap::new(),
+            blank_chunk: RasterChunk::new_fill(colors::transparent(), chunk_size, chunk_size),
         }
     }
 }
@@ -48,7 +50,7 @@ impl RasterLayerAction {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-struct ChunkRectPosition {
+pub struct ChunkRectPosition {
     top_left_in_chunk: PixelPosition,
     width: usize,
     height: usize,
@@ -119,6 +121,171 @@ impl ChunkRect {
     }
 }
 
+pub struct RasterChunkIterator<T> {
+    raster_layer: T,
+    chunk_rect: ChunkRect,
+    delta: (usize, usize),
+}
+
+impl<'a> Iterator for RasterChunkIterator<&'a RasterLayer> {
+    type Item = (Option<&'a RasterChunk>, ChunkRectPosition);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let chunk_rect = self.chunk_rect;
+        let chunk_size = self.raster_layer.chunk_size;
+        let chunks = &self.raster_layer.chunks;
+
+        if self.delta.0 >= chunk_rect.chunk_dimensions.width {
+            self.delta.0 = 0;
+            self.delta.1 += 1;
+        }
+
+        if self.delta.1 >= chunk_rect.chunk_dimensions.height {
+            return None;
+        }
+
+        let (x_offset, y_offset) = self.delta;
+
+        let width = if chunk_rect.chunk_dimensions.width == 1 {
+            chunk_rect.bottom_right_in_chunk.0 .0 - chunk_rect.top_left_in_chunk.0 .0 + 1
+        } else if x_offset == 0 {
+            chunk_size - chunk_rect.top_left_in_chunk.0 .0
+        } else if x_offset == chunk_rect.chunk_dimensions.width - 1 {
+            chunk_rect.bottom_right_in_chunk.0 .0 + 1
+        } else {
+            chunk_size
+        };
+
+        let height = if chunk_rect.chunk_dimensions.height == 1 {
+            chunk_rect.bottom_right_in_chunk.0 .1 - chunk_rect.top_left_in_chunk.0 .1 + 1
+        } else if y_offset == 0 {
+            chunk_size - chunk_rect.top_left_in_chunk.0 .1
+        } else if y_offset == chunk_rect.chunk_dimensions.height - 1 {
+            chunk_rect.bottom_right_in_chunk.0 .1 + 1
+        } else {
+            chunk_size
+        };
+
+        let x_pixel_offset: usize = if x_offset == 0 {
+            0
+        } else {
+            chunk_size - chunk_rect.top_left_in_chunk.0 .0 + (chunk_size * (x_offset - 1))
+        };
+
+        let y_pixel_offset: usize = if y_offset == 0 {
+            0
+        } else {
+            chunk_size - chunk_rect.top_left_in_chunk.0 .1 + (chunk_size * (y_offset - 1))
+        };
+
+        let chunk_position = chunk_rect
+            .top_left_chunk
+            .translate((x_offset as i64, y_offset as i64));
+
+        // `unwrap` is ok because chunk_position is constructed to always be within
+        // `chunk_rect`.
+        let top_left_in_chunk = chunk_rect.top_left_in_chunk(chunk_position).unwrap();
+
+        let raster_chunk = chunks.get(&chunk_position);
+
+        let chunk_rect_position = ChunkRectPosition {
+            top_left_in_chunk,
+            width,
+            height,
+            x_chunk_offset: x_offset,
+            y_chunk_offset: y_offset,
+            x_pixel_offset,
+            y_pixel_offset,
+        };
+
+        self.delta.0 += 1;
+
+        Some((raster_chunk, chunk_rect_position))
+    }
+}
+
+impl<'a> Iterator for RasterChunkIterator<&'a mut RasterLayer> {
+    type Item = (Option<&'a mut RasterChunk>, ChunkRectPosition);
+
+    fn next<'b>(&'b mut self) -> Option<Self::Item> {
+        let chunk_rect = self.chunk_rect;
+        let chunk_size = self.raster_layer.chunk_size;
+        let chunks = unsafe {
+            std::mem::transmute::<
+                &'b mut HashMap<ChunkPosition, RasterChunk>,
+                &'a mut HashMap<ChunkPosition, RasterChunk>,
+            >(&mut self.raster_layer.chunks)
+        };
+
+        if self.delta.0 >= chunk_rect.chunk_dimensions.width {
+            self.delta.0 = 0;
+            self.delta.1 += 1;
+        }
+
+        if self.delta.1 >= chunk_rect.chunk_dimensions.height {
+            return None;
+        }
+
+        let (x_offset, y_offset) = self.delta;
+
+        let width = if chunk_rect.chunk_dimensions.width == 1 {
+            chunk_rect.bottom_right_in_chunk.0 .0 - chunk_rect.top_left_in_chunk.0 .0 + 1
+        } else if x_offset == 0 {
+            chunk_size - chunk_rect.top_left_in_chunk.0 .0
+        } else if x_offset == chunk_rect.chunk_dimensions.width - 1 {
+            chunk_rect.bottom_right_in_chunk.0 .0 + 1
+        } else {
+            chunk_size
+        };
+
+        let height = if chunk_rect.chunk_dimensions.height == 1 {
+            chunk_rect.bottom_right_in_chunk.0 .1 - chunk_rect.top_left_in_chunk.0 .1 + 1
+        } else if y_offset == 0 {
+            chunk_size - chunk_rect.top_left_in_chunk.0 .1
+        } else if y_offset == chunk_rect.chunk_dimensions.height - 1 {
+            chunk_rect.bottom_right_in_chunk.0 .1 + 1
+        } else {
+            chunk_size
+        };
+
+        let x_pixel_offset: usize = if x_offset == 0 {
+            0
+        } else {
+            chunk_size - chunk_rect.top_left_in_chunk.0 .0 + (chunk_size * (x_offset - 1))
+        };
+
+        let y_pixel_offset: usize = if y_offset == 0 {
+            0
+        } else {
+            chunk_size - chunk_rect.top_left_in_chunk.0 .1 + (chunk_size * (y_offset - 1))
+        };
+
+        let chunk_position = chunk_rect
+            .top_left_chunk
+            .translate((x_offset as i64, y_offset as i64));
+
+        // `unwrap` is ok because chunk_position is constructed to always be within
+        // `chunk_rect`.
+        let top_left_in_chunk = chunk_rect.top_left_in_chunk(chunk_position).unwrap();
+
+        let raster_chunk = chunks.get_mut(&chunk_position);
+
+        let chunk_rect_position = ChunkRectPosition {
+            top_left_in_chunk,
+            width,
+            height,
+            x_chunk_offset: x_offset,
+            y_chunk_offset: y_offset,
+            x_pixel_offset,
+            y_pixel_offset,
+        };
+
+        self.delta.0 += 1;
+
+        Some((raster_chunk, chunk_rect_position))
+    }
+}
+
 impl RasterLayer {
     fn find_chunk_rect_in_canvas_rect(&self, canvas_rect: CanvasRect) -> ChunkRect {
         let CanvasRect {
@@ -144,73 +311,22 @@ impl RasterLayer {
         }
     }
 
-    fn for_chunk_rect<F>(&mut self, r: &mut F, chunk_rect: ChunkRect)
-    where
-        F: FnMut(&mut RasterChunk, ChunkRectPosition),
-    {
-        for y_offset in 0..chunk_rect.chunk_dimensions.height {
-            for x_offset in 0..chunk_rect.chunk_dimensions.width {
-                let width = if chunk_rect.chunk_dimensions.width == 1 {
-                    chunk_rect.bottom_right_in_chunk.0 .0 - chunk_rect.top_left_in_chunk.0 .0 + 1
-                } else if x_offset == 0 {
-                    self.chunk_size - chunk_rect.top_left_in_chunk.0 .0
-                } else if x_offset == chunk_rect.chunk_dimensions.width - 1 {
-                    chunk_rect.bottom_right_in_chunk.0 .0 + 1
-                } else {
-                    self.chunk_size
-                };
+    fn iter_chunks_in_rect(&self, chunk_rect: ChunkRect) -> RasterChunkIterator<&RasterLayer> {
+        RasterChunkIterator {
+            raster_layer: self,
+            chunk_rect,
+            delta: (0, 0),
+        }
+    }
 
-                let height = if chunk_rect.chunk_dimensions.height == 1 {
-                    chunk_rect.bottom_right_in_chunk.0 .1 - chunk_rect.top_left_in_chunk.0 .1 + 1
-                } else if y_offset == 0 {
-                    self.chunk_size - chunk_rect.top_left_in_chunk.0 .1
-                } else if y_offset == chunk_rect.chunk_dimensions.height - 1 {
-                    chunk_rect.bottom_right_in_chunk.0 .1 + 1
-                } else {
-                    self.chunk_size
-                };
-
-                let x_pixel_offset: usize = if x_offset == 0 {
-                    0
-                } else {
-                    self.chunk_size - chunk_rect.top_left_in_chunk.0 .0
-                        + (self.chunk_size * (x_offset - 1))
-                };
-
-                let y_pixel_offset: usize = if y_offset == 0 {
-                    0
-                } else {
-                    self.chunk_size - chunk_rect.top_left_in_chunk.0 .1
-                        + (self.chunk_size * (y_offset - 1))
-                };
-
-                let chunk_position = chunk_rect
-                    .top_left_chunk
-                    .translate((x_offset as i64, y_offset as i64));
-
-                // `unwrap` is ok because chunk_position is constructed to always be within
-                // `chunk_rect`.
-                let top_left_in_chunk = chunk_rect.top_left_in_chunk(chunk_position).unwrap();
-
-                let raster_chunk = match self.chunks.entry(chunk_position) {
-                    Entry::Occupied(o) => o.into_mut(),
-                    Entry::Vacant(v) => {
-                        v.insert(RasterChunk::new(self.chunk_size, self.chunk_size))
-                    }
-                };
-
-                let chunk_rect_position = ChunkRectPosition {
-                    top_left_in_chunk,
-                    width,
-                    height,
-                    x_chunk_offset: x_offset,
-                    y_chunk_offset: y_offset,
-                    x_pixel_offset,
-                    y_pixel_offset,
-                };
-
-                r(raster_chunk, chunk_rect_position);
-            }
+    fn iter_mut_chunks_in_rect(
+        &mut self,
+        chunk_rect: ChunkRect,
+    ) -> RasterChunkIterator<&mut RasterLayer> {
+        RasterChunkIterator {
+            raster_layer: self,
+            chunk_rect,
+            delta: (0, 0),
         }
     }
 
@@ -222,15 +338,16 @@ impl RasterLayer {
         };
 
         let chunk_rect = self.find_chunk_rect_in_canvas_rect(canvas_rect);
+        let mut raster_chunks_need_insert = HashMap::new();
+        let chunk_size = self.chunk_size;
 
-        let mut writer = |raster_chunk: &mut RasterChunk,
-                          chunk_rect_position: ChunkRectPosition| {
+        for (raster_chunk, chunk_rect_position) in self.iter_mut_chunks_in_rect(chunk_rect) {
             let ChunkRectPosition {
                 top_left_in_chunk,
                 width: _,
                 height: _,
-                x_chunk_offset: _,
-                y_chunk_offset: _,
+                x_chunk_offset,
+                y_chunk_offset,
                 x_pixel_offset,
                 y_pixel_offset,
             } = chunk_rect_position;
@@ -250,10 +367,21 @@ impl RasterLayer {
                 top_left_in_chunk.1 - pixel_offset.1,
             );
 
-            raster_chunk.composite_over(source, top_left_in_chunk.into());
-        };
+            if let Some(raster_chunk) = raster_chunk {
+                raster_chunk.composite_over(source, top_left_in_chunk.into());
+            } else {
+                let mut raster_chunk = RasterChunk::new(chunk_size, chunk_size);
+                let chunk_position = chunk_rect
+                    .top_left_chunk
+                    .translate((x_chunk_offset as i64, y_chunk_offset as i64));
+                raster_chunk.composite_over(source, top_left_in_chunk.into());
+                raster_chunks_need_insert.insert(chunk_position, raster_chunk);
+            }
+        }
 
-        self.for_chunk_rect(&mut writer, chunk_rect);
+        for (chunk_position, raster_chunk) in raster_chunks_need_insert {
+            self.chunks.insert(chunk_position, raster_chunk);
+        }
 
         canvas_rect
     }
@@ -269,26 +397,39 @@ impl RasterLayer {
         match action {
             FillRect(canvas_rect, pixel) => {
                 let chunk_rect = self.find_chunk_rect_in_canvas_rect(canvas_rect);
+                let chunk_size = self.chunk_size;
+                let mut raster_chunks_need_insert = HashMap::new();
 
-                let mut writer =
-                    |raster_chunk: &mut RasterChunk, chunk_rect_position: ChunkRectPosition| {
-                        let ChunkRectPosition {
-                            top_left_in_chunk,
-                            width,
-                            height,
-                            x_chunk_offset: _,
-                            y_chunk_offset: _,
-                            x_pixel_offset: _,
-                            y_pixel_offset: _,
-                        } = chunk_rect_position;
+                for (raster_chunk, chunk_rect_position) in self.iter_mut_chunks_in_rect(chunk_rect)
+                {
+                    let ChunkRectPosition {
+                        top_left_in_chunk,
+                        width,
+                        height,
+                        x_chunk_offset,
+                        y_chunk_offset,
+                        x_pixel_offset: _,
+                        y_pixel_offset: _,
+                    } = chunk_rect_position;
 
-                        let draw_chunk = RasterChunk::new_fill(pixel, width, height);
-
+                    let draw_chunk = RasterChunk::new_fill(pixel, width, height);
+                    if let Some(raster_chunk) = raster_chunk {
                         raster_chunk
                             .composite_over(&draw_chunk.as_window(), top_left_in_chunk.into());
-                    };
+                    } else {
+                        let mut raster_chunk = RasterChunk::new(chunk_size, chunk_size);
+                        let chunk_position = chunk_rect
+                            .top_left_chunk
+                            .translate((x_chunk_offset as i64, y_chunk_offset as i64));
+                        raster_chunk
+                            .composite_over(&draw_chunk.as_window(), top_left_in_chunk.into());
+                        raster_chunks_need_insert.insert(chunk_position, raster_chunk);
+                    }
+                }
 
-                self.for_chunk_rect(&mut writer, chunk_rect);
+                for (chunk_position, raster_chunk) in raster_chunks_need_insert {
+                    self.chunks.insert(chunk_position, raster_chunk);
+                }
 
                 Some(canvas_rect)
             }
@@ -316,26 +457,40 @@ impl RasterLayer {
         match action {
             FillRect(canvas_rect, pixel) => {
                 let chunk_rect = self.find_chunk_rect_in_canvas_rect(canvas_rect);
+                let mut raster_chunks_need_insert = HashMap::new();
+                let chunk_size = self.chunk_size;
 
-                let mut writer =
-                    |raster_chunk: &mut RasterChunk, chunk_rect_position: ChunkRectPosition| {
-                        let ChunkRectPosition {
-                            top_left_in_chunk,
-                            width,
-                            height,
-                            x_chunk_offset: _,
-                            y_chunk_offset: _,
-                            x_pixel_offset: _,
-                            y_pixel_offset: _,
-                        } = chunk_rect_position;
+                for (raster_chunk, chunk_rect_position) in self.iter_mut_chunks_in_rect(chunk_rect)
+                {
+                    let ChunkRectPosition {
+                        top_left_in_chunk,
+                        width,
+                        height,
+                        x_chunk_offset,
+                        y_chunk_offset,
+                        x_pixel_offset: _,
+                        y_pixel_offset: _,
+                    } = chunk_rect_position;
 
-                        let draw_chunk = RasterChunk::new_fill(pixel, width, height);
+                    let draw_chunk = RasterChunk::new_fill(pixel, width, height);
 
+                    if let Some(raster_chunk) = raster_chunk {
                         raster_chunk
                             .composite_over(&draw_chunk.as_window(), top_left_in_chunk.into());
-                    };
+                    } else {
+                        let mut raster_chunk = RasterChunk::new(chunk_size, chunk_size);
+                        let chunk_position = chunk_rect
+                            .top_left_chunk
+                            .translate((x_chunk_offset as i64, y_chunk_offset as i64));
+                        raster_chunk
+                            .composite_over(&draw_chunk.as_window(), top_left_in_chunk.into());
+                        raster_chunks_need_insert.insert(chunk_position, raster_chunk);
+                    }
+                }
 
-                self.for_chunk_rect(&mut writer, chunk_rect);
+                for (chunk_position, raster_chunk) in raster_chunks_need_insert {
+                    self.chunks.insert(chunk_position, raster_chunk);
+                }
 
                 Some(canvas_rect)
             }
@@ -376,8 +531,7 @@ impl Layer for RasterLayer {
         } = canvas_rect.dimensions;
         let mut raster_result = RasterChunk::new(view_width, view_height);
 
-        let mut rasterizer = |raster_chunk: &mut RasterChunk,
-                              chunk_rect_position: ChunkRectPosition| {
+        for (raster_chunk, chunk_rect_position) in self.iter_chunks_in_rect(chunk_rect) {
             let ChunkRectPosition {
                 top_left_in_chunk,
                 width,
@@ -388,6 +542,8 @@ impl Layer for RasterLayer {
                 y_pixel_offset,
             } = chunk_rect_position;
 
+            let raster_chunk = raster_chunk.unwrap_or(&self.blank_chunk);
+
             let raster_window =
                 RasterWindow::new(raster_chunk, top_left_in_chunk, width, height).unwrap();
 
@@ -397,9 +553,7 @@ impl Layer for RasterLayer {
                 DrawPosition::from((x_pixel_offset, y_pixel_offset));
 
             raster_result.blit(&raster_window, draw_position_in_result);
-        };
-
-        self.for_chunk_rect(&mut rasterizer, chunk_rect);
+        }
 
         raster_result
     }
