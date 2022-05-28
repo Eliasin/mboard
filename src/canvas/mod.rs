@@ -313,9 +313,12 @@ impl Canvas {
                     let changed_canvas_rect =
                         raster_layer.perform_action_with_cache(action, &mut self.shape_cache);
 
+                    let layers = &mut self.layers;
                     if let Some(changed_canvas_rect) = changed_canvas_rect {
                         self.rasterization_cache
-                            .invalidate_canvas_rect(&changed_canvas_rect);
+                            .rerender_canvas_rect(&changed_canvas_rect, &mut |c| {
+                                Canvas::rasterize_canvas_rect(layers, *c)
+                            });
                     }
 
                     changed_canvas_rect

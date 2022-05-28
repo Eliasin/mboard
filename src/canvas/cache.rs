@@ -2,6 +2,7 @@ use lru::LruCache;
 
 use crate::raster::{
     chunks::{RasterChunk, RasterWindow},
+    position::DrawPosition,
     shapes::{Oval, RasterPolygon},
 };
 
@@ -35,9 +36,23 @@ impl Default for ShapeCache {
 pub struct CanvasRasterizationCache(Option<CachedCanvasRaster>);
 
 impl CanvasRasterizationCache {
-    pub fn invalidate_canvas_rect(&mut self, canvas_rect: &CanvasRect) {
-        // For now, invalidate whole thing
-        self.0 = None;
+    pub fn rerender_canvas_rect<R>(&mut self, canvas_rect: &CanvasRect, rasterizer: &mut R)
+    where
+        R: FnMut(&CanvasRect) -> RasterChunk,
+    {
+        if let Some(cached_canvas_raster) = &mut self.0 {
+            if let Some(rect_offset) = cached_canvas_raster
+                .cached_canvas_rect()
+                .contains_with_offset(canvas_rect)
+            {
+                let new_chunk = rasterizer(canvas_rect);
+                let draw_position: DrawPosition = rect_offset.into();
+
+                cached_canvas_raster
+                    .cached_chunk
+                    .blit(&new_chunk.as_window(), draw_position);
+            }
+        }
     }
 
     fn get_chunk_from_cache<'a, R>(
