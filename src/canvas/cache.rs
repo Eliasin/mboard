@@ -35,6 +35,10 @@ impl Default for ShapeCache {
 pub struct CanvasRasterizationCache(Option<CachedCanvasRaster>);
 
 impl CanvasRasterizationCache {
+    pub fn invalidate(&mut self) {
+        self.0 = None;
+    }
+
     fn get_chunk_from_cache<'a, R>(
         cached_canvas_raster: &'a mut CachedCanvasRaster,
         canvas_rect: &CanvasRect,
@@ -125,6 +129,47 @@ impl CachedCanvasRaster {
 }
 
 mod tests {
+    #[cfg(test)]
+    use crate::{
+        assert_raster_eq,
+        canvas::{CanvasPosition, CanvasRect},
+        raster::{
+            chunks::RasterChunk, pixels::colors, position::Dimensions, position::PixelPosition,
+        },
+    };
+
+    #[cfg(test)]
+    use super::{CachedCanvasRaster, CanvasRasterizationCache};
+
     #[test]
-    fn test_canvas_rect_rasterization_cache() {}
+    fn test_canvas_rect_rasterization_cache() {
+        // Ensure that the cache does not re-render unnecessarily
+
+        let render_chunk = RasterChunk::new_fill(colors::green(), 64, 64);
+        let cached_chunk = RasterChunk::new_fill(colors::red(), 64, 64);
+
+        let mut cache = CanvasRasterizationCache(Some(CachedCanvasRaster {
+            cached_chunk_position: CanvasPosition((0, 0)),
+            cached_chunk: cached_chunk.clone(),
+        }));
+
+        let canvas_rect = CanvasRect {
+            top_left: CanvasPosition((0, 0)),
+            dimensions: Dimensions {
+                width: 64,
+                height: 64,
+            },
+        };
+
+        let cache_result = cache
+            .get_chunk_or_rasterize(&canvas_rect, &mut |rect: &CanvasRect| -> RasterChunk {
+                let position =
+                    PixelPosition((rect.top_left.0 .0 as usize, rect.top_left.0 .1 as usize));
+
+                render_chunk.clone_square(position, rect.dimensions.width, rect.dimensions.height)
+            })
+            .to_chunk();
+
+        assert_raster_eq!(cache_result, cached_chunk);
+    }
 }

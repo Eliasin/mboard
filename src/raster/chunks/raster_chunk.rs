@@ -111,7 +111,7 @@ impl RasterChunk {
     /// any regions outside the source chunk will be filled in as transparent.
     pub fn clone_square(
         &self,
-        position: (usize, usize),
+        position: PixelPosition,
         width: usize,
         height: usize,
     ) -> RasterChunk {
@@ -119,7 +119,7 @@ impl RasterChunk {
 
         for row in 0..height {
             for column in 0..width {
-                let source_position = (column + position.0, row + position.1);
+                let source_position = (column + position.0 .0, row + position.0 .1);
 
                 if let Some(source_index) = self.get_index_from_position(source_position.into()) {
                     rect.push(self.pixels[source_index]);
