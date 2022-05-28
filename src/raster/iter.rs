@@ -14,9 +14,19 @@ impl<'a> RasterLayerReference for &'a RasterLayer {}
 impl<'a> RasterLayerReference for &'a mut RasterLayer {}
 
 pub struct GenericRasterChunkIterator<T: RasterLayerReference> {
-    pub(super) raster_layer: T,
-    pub(super) chunk_rect: ChunkRect,
-    pub(super) delta: (usize, usize),
+    raster_layer: T,
+    chunk_rect: ChunkRect,
+    delta: (usize, usize),
+}
+
+impl<T: RasterLayerReference> GenericRasterChunkIterator<T> {
+    pub fn new(raster_layer_reference: T, chunk_rect: ChunkRect) -> Self {
+        Self {
+            raster_layer: raster_layer_reference,
+            chunk_rect,
+            delta: (0, 0),
+        }
+    }
 }
 
 impl<'a> Iterator for GenericRasterChunkIterator<&'a RasterLayer> {
@@ -29,7 +39,11 @@ impl<'a> Iterator for GenericRasterChunkIterator<&'a RasterLayer> {
 
         if self.delta.0 >= chunk_rect.chunk_dimensions.width {
             self.delta.0 = 0;
-            self.delta.1 += 1;
+            // We must used `checked_add` to ensure that wrapping never occurs,
+            // as that would break the invariant that a `delta` value is never
+            // repeated for the lifetime of the iterator, causing
+            // undefined behvaiour
+            self.delta.1 = self.delta.1.checked_add(1).unwrap();
         }
 
         if self.delta.1 >= chunk_rect.chunk_dimensions.height {

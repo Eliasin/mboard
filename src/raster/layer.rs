@@ -145,19 +145,11 @@ impl RasterLayer {
     }
 
     fn iter_chunks_in_rect(&self, chunk_rect: ChunkRect) -> RasterChunkIterator {
-        RasterChunkIterator {
-            raster_layer: self,
-            chunk_rect,
-            delta: (0, 0),
-        }
+        RasterChunkIterator::new(self, chunk_rect)
     }
 
     fn iter_mut_chunks_in_rect(&mut self, chunk_rect: ChunkRect) -> RasterChunkIteratorMut {
-        RasterChunkIteratorMut {
-            raster_layer: self,
-            chunk_rect,
-            delta: (0, 0),
-        }
+        RasterChunkIteratorMut::new(self, chunk_rect)
     }
 
     /// Composites a `RasterWindow` onto the layer with the top left at the position provided.
