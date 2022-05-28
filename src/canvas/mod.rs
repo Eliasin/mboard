@@ -229,10 +229,10 @@ impl CanvasRect {
         let margin_i64 = margin as i64;
 
         let mut new_rect = *self;
-        new_rect.top_left.translate((-margin_i64, -margin_i64));
+        new_rect.top_left = new_rect.top_left.translate((-margin_i64, -margin_i64));
         new_rect.dimensions = Dimensions {
-            width: self.dimensions.width + margin,
-            height: self.dimensions.height + margin,
+            width: self.dimensions.width + margin * 2,
+            height: self.dimensions.height + margin * 2,
         };
 
         new_rect
@@ -310,7 +310,15 @@ impl Canvas {
         if let Some(layer) = self.layers.get_mut(layer_num) {
             match layer {
                 RasterLayer(raster_layer) => {
-                    raster_layer.perform_action_with_cache(action, &mut self.shape_cache)
+                    let changed_canvas_rect =
+                        raster_layer.perform_action_with_cache(action, &mut self.shape_cache);
+
+                    if let Some(changed_canvas_rect) = changed_canvas_rect {
+                        self.rasterization_cache
+                            .invalidate_canvas_rect(&changed_canvas_rect);
+                    }
+
+                    changed_canvas_rect
                 }
             }
         } else {
@@ -565,5 +573,28 @@ mod tests {
         };
 
         assert_eq!(rect_a.contains_with_offset(&rect_d), None);
+    }
+
+    #[test]
+    fn test_canvas_rect_expansion() {
+        let canvas_rect = CanvasRect {
+            top_left: CanvasPosition((0, 0)),
+            dimensions: Dimensions {
+                width: 64,
+                height: 64,
+            },
+        };
+
+        let expanded_a = canvas_rect.expand(canvas_rect.dimensions.largest_dimension());
+
+        let expected_a = CanvasRect {
+            top_left: CanvasPosition((-64, -64)),
+            dimensions: Dimensions {
+                width: 64 * 3,
+                height: (64 * 3),
+            },
+        };
+
+        assert_eq!(expanded_a, expected_a);
     }
 }
