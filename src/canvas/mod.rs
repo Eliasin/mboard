@@ -170,6 +170,7 @@ impl CanvasRect {
         })
     }
 
+    /// A rect that contains both this `CanvasRect` and `other`.
     pub fn spanning_rect(&self, other: &CanvasRect) -> CanvasRect {
         let top = self.top_left.0 .1.min(other.top_left.0 .1);
         let left = self.top_left.0 .0.min(other.top_left.0 .0);
@@ -222,6 +223,20 @@ impl CanvasRect {
             }
         }
     }
+
+    /// Expands `self` in all directions by `margin`.
+    pub fn expand(&self, margin: usize) -> CanvasRect {
+        let margin_i64 = margin as i64;
+
+        let mut new_rect = *self;
+        new_rect.top_left.translate((-margin_i64, -margin_i64));
+        new_rect.dimensions = Dimensions {
+            width: self.dimensions.width + margin,
+            height: self.dimensions.height + margin,
+        };
+
+        new_rect
+    }
 }
 
 /// A logical layer in the canvas. Layers can be composited ontop of eachother.
@@ -241,7 +256,7 @@ pub trait Layer {
 pub struct Canvas {
     layers: Vec<LayerImplementation>,
     shape_cache: ShapeCache,
-    rasterization_cache: Option<CanvasRasterizationCache>,
+    rasterization_cache: CanvasRasterizationCache,
 }
 
 impl Canvas {
@@ -274,30 +289,12 @@ impl Canvas {
     }
 
     pub fn render_canvas_rect(&mut self, canvas_rect: CanvasRect) -> RasterChunk {
-        match &mut self.rasterization_cache {
-            Some(rasterization_cache) => {
-                let cache_result = rasterization_cache.get_chunk(&canvas_rect);
-
-                use cache::CanvasRasterizationCacheResult::*;
-                match cache_result {
-                    Cached(cached_chunk) => cached_chunk.to_chunk(),
-                    NeedsPartialRender(partial_render_request) => partial_render_request
-                        .resolve_with_rasterizer(&mut |canvas_rect| {
-                            Canvas::rasterize_canvas_rect(&mut self.layers, canvas_rect)
-                        })
-                        .to_chunk(),
-                }
-            }
-            None => {
-                let rasterized_chunk = Canvas::rasterize_canvas_rect(&mut self.layers, canvas_rect);
-                self.rasterization_cache = Some(CanvasRasterizationCache::new(
-                    canvas_rect,
-                    rasterized_chunk.clone(),
-                ));
-
-                rasterized_chunk
-            }
-        }
+        let layers = &mut self.layers;
+        self.rasterization_cache
+            .get_chunk_or_rasterize(&canvas_rect, &mut |c| {
+                Canvas::rasterize_canvas_rect(layers, *c)
+            })
+            .to_chunk()
     }
 
     pub fn add_layer(&mut self, layer: LayerImplementation) {

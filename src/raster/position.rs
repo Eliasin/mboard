@@ -86,6 +86,11 @@ impl Dimensions {
             self.height as i64 - other.height as i64,
         )
     }
+
+    /// The largest of `width` and `height`.
+    pub fn largest_dimension(&self) -> usize {
+        usize::max(self.width, self.height)
+    }
 }
 
 /// A position referencing a pixel within a raster layer.

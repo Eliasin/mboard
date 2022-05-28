@@ -31,58 +31,74 @@ impl Default for ShapeCache {
     }
 }
 
-pub struct CanvasCacheNeedsPartialRender<'a> {
-    canvas_rasterization_cache: &'a mut CanvasRasterizationCache,
-    requested_render_rect: CanvasRect,
-}
+#[derive(Default)]
+pub struct CanvasRasterizationCache(Option<CachedCanvasRaster>);
 
-impl<'a> CanvasCacheNeedsPartialRender<'a> {
-    fn get_rects_need_rendering(&self) -> Vec<CanvasRect> {
-        todo!()
-    }
-
-    fn update_canvas_rect_in_cache<R>(&mut self, canvas_rect: CanvasRect, rasterizer: &mut R)
+impl CanvasRasterizationCache {
+    fn get_chunk_from_cache<'a, R>(
+        cached_canvas_raster: &'a mut CachedCanvasRaster,
+        canvas_rect: &CanvasRect,
+        rasterizer: &mut R,
+    ) -> RasterWindow<'a>
     where
-        R: FnMut(CanvasRect) -> RasterChunk,
+        R: FnMut(&CanvasRect) -> RasterChunk,
     {
-        todo!()
-    }
+        // We don't use an if-let here due to some lifetime issues
+        // it causes, primarily, this one https://github.com/rust-lang/rust/issues/54663
+        if cached_canvas_raster.has_rect_cached(canvas_rect) {
+            cached_canvas_raster.get_window(canvas_rect).unwrap()
+        } else {
+            // Pre-render surrounding area
+            let expanded_canvas_rect =
+                canvas_rect.expand(canvas_rect.dimensions.largest_dimension());
+            let raster_chunk = rasterizer(canvas_rect);
+            *cached_canvas_raster = CachedCanvasRaster {
+                cached_rect: expanded_canvas_rect,
+                cached_chunk: raster_chunk,
+            };
 
-    pub fn resolve_with_rasterizer<R>(mut self, rasterizer: &mut R) -> RasterWindow
-    where
-        R: FnMut(CanvasRect) -> RasterChunk,
-    {
-        for canvas_rect in self.get_rects_need_rendering() {
-            self.update_canvas_rect_in_cache(canvas_rect, rasterizer)
+            cached_canvas_raster.get_window(canvas_rect).unwrap()
         }
+    }
 
-        todo!();
+    pub fn get_chunk_or_rasterize<R>(
+        &mut self,
+        canvas_rect: &CanvasRect,
+        rasterizer: &mut R,
+    ) -> RasterWindow
+    where
+        R: FnMut(&CanvasRect) -> RasterChunk,
+    {
+        let cached_canvas_raster = self.0.get_or_insert_with(|| {
+            // Pre-render surrounding area
+            let expanded_canvas_rect =
+                canvas_rect.expand(canvas_rect.dimensions.largest_dimension());
+            let raster_chunk = rasterizer(canvas_rect);
+            CachedCanvasRaster {
+                cached_rect: expanded_canvas_rect,
+                cached_chunk: raster_chunk,
+            }
+        });
+
+        CanvasRasterizationCache::get_chunk_from_cache(
+            cached_canvas_raster,
+            canvas_rect,
+            rasterizer,
+        )
     }
 }
 
-pub enum CanvasRasterizationCacheResult<'a> {
-    Cached(RasterWindow<'a>),
-    NeedsPartialRender(CanvasCacheNeedsPartialRender<'a>),
-}
-
-pub struct CanvasRasterizationCache {
+struct CachedCanvasRaster {
     cached_rect: CanvasRect,
     cached_chunk: RasterChunk,
 }
 
-impl CanvasRasterizationCache {
-    pub fn new(cached_rect: CanvasRect, cached_chunk: RasterChunk) -> CanvasRasterizationCache {
-        CanvasRasterizationCache {
-            cached_rect,
-            cached_chunk,
-        }
-    }
-
-    pub fn get_chunk(&mut self, canvas_rect: &CanvasRect) -> CanvasRasterizationCacheResult {
+impl CachedCanvasRaster {
+    pub fn get_window(&self, canvas_rect: &CanvasRect) -> Option<RasterWindow> {
         if let Some(canvas_rect_offset_from_cached) =
             self.cached_rect.contains_with_offset(canvas_rect)
         {
-            CanvasRasterizationCacheResult::Cached(
+            Some(
                 RasterWindow::new(
                     &self.cached_chunk,
                     canvas_rect_offset_from_cached,
@@ -92,10 +108,11 @@ impl CanvasRasterizationCache {
                 .unwrap(),
             )
         } else {
-            CanvasRasterizationCacheResult::NeedsPartialRender(CanvasCacheNeedsPartialRender {
-                canvas_rasterization_cache: self,
-                requested_render_rect: *canvas_rect,
-            })
+            None
         }
+    }
+
+    pub fn has_rect_cached(&self, canvas_rect: &CanvasRect) -> bool {
+        self.get_window(canvas_rect).is_some()
     }
 }
