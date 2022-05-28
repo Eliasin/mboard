@@ -5,7 +5,7 @@ use crate::raster::{
     shapes::{Oval, RasterPolygon},
 };
 
-use super::CanvasRect;
+use super::{CanvasPosition, CanvasRect};
 
 pub struct ShapeCache {
     oval_cache: LruCache<Oval, RasterChunk>,
@@ -53,7 +53,7 @@ impl CanvasRasterizationCache {
                 canvas_rect.expand(canvas_rect.dimensions.largest_dimension());
             let raster_chunk = rasterizer(canvas_rect);
             *cached_canvas_raster = CachedCanvasRaster {
-                cached_rect: expanded_canvas_rect,
+                cached_chunk_position: expanded_canvas_rect.top_left,
                 cached_chunk: raster_chunk,
             };
 
@@ -75,7 +75,7 @@ impl CanvasRasterizationCache {
                 canvas_rect.expand(canvas_rect.dimensions.largest_dimension());
             let raster_chunk = rasterizer(canvas_rect);
             CachedCanvasRaster {
-                cached_rect: expanded_canvas_rect,
+                cached_chunk_position: expanded_canvas_rect.top_left,
                 cached_chunk: raster_chunk,
             }
         });
@@ -89,14 +89,21 @@ impl CanvasRasterizationCache {
 }
 
 struct CachedCanvasRaster {
-    cached_rect: CanvasRect,
+    cached_chunk_position: CanvasPosition,
     cached_chunk: RasterChunk,
 }
 
 impl CachedCanvasRaster {
+    fn cached_canvas_rect(&self) -> CanvasRect {
+        CanvasRect {
+            top_left: self.cached_chunk_position,
+            dimensions: self.cached_chunk.dimensions(),
+        }
+    }
+
     pub fn get_window(&self, canvas_rect: &CanvasRect) -> Option<RasterWindow> {
         if let Some(canvas_rect_offset_from_cached) =
-            self.cached_rect.contains_with_offset(canvas_rect)
+            self.cached_canvas_rect().contains_with_offset(canvas_rect)
         {
             Some(
                 RasterWindow::new(
@@ -115,4 +122,9 @@ impl CachedCanvasRaster {
     pub fn has_rect_cached(&self, canvas_rect: &CanvasRect) -> bool {
         self.get_window(canvas_rect).is_some()
     }
+}
+
+mod tests {
+    #[test]
+    fn test_canvas_rect_rasterization_cache() {}
 }

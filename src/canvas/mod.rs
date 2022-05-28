@@ -217,8 +217,8 @@ impl CanvasRect {
                 None
             } else {
                 Some(PixelPosition::from((
-                    (other.top_left.0 .0 - self.top_left.0 .0) as usize,
-                    (other.top_left.0 .1 - self.top_left.0 .1) as usize,
+                    other.top_left.0 .0.abs_diff(self.top_left.0 .0) as usize,
+                    other.top_left.0 .1.abs_diff(self.top_left.0 .1) as usize,
                 )))
             }
         }
@@ -513,5 +513,57 @@ mod tests {
                 }
             }
         );
+    }
+
+    #[test]
+    fn test_canvas_rect_containment() {
+        let rect_a = CanvasRect {
+            top_left: CanvasPosition((-5, -10)),
+            dimensions: Dimensions {
+                width: 10,
+                height: 20,
+            },
+        };
+
+        assert_eq!(
+            rect_a.contains_with_offset(&rect_a),
+            Some(PixelPosition::from((0, 0)))
+        );
+
+        let rect_b = CanvasRect {
+            top_left: CanvasPosition((0, 0)),
+            dimensions: Dimensions {
+                width: 5,
+                height: 5,
+            },
+        };
+
+        assert_eq!(
+            rect_a.contains_with_offset(&rect_b),
+            Some(PixelPosition::from((5, 10)))
+        );
+
+        let rect_c = CanvasRect {
+            top_left: CanvasPosition((4, 9)),
+            dimensions: Dimensions {
+                width: 1,
+                height: 1,
+            },
+        };
+
+        assert_eq!(
+            rect_a.contains_with_offset(&rect_c),
+            Some(PixelPosition::from((9, 19)))
+        );
+
+        let rect_d = CanvasRect {
+            top_left: CanvasPosition((5, 10)),
+            dimensions: Dimensions {
+                width: 1,
+                height: 1,
+            },
+        };
+
+        assert_eq!(rect_a.contains_with_offset(&rect_d), None);
     }
 }
