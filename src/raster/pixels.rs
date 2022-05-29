@@ -64,7 +64,7 @@ impl Pixel {
     }
 
     /// Get the RGBA values of a pixel as normalized components in
-    /// the range [0,1].
+    /// the range \[0,1\].
     pub fn as_norm_rgba(&self) -> (f32, f32, f32, f32) {
         let (r, g, b, a) = self.as_rgba();
         (
