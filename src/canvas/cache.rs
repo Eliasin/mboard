@@ -122,21 +122,17 @@ impl CachedCanvasRaster {
     }
 
     pub fn get_window(&self, canvas_rect: &CanvasRect) -> Option<RasterWindow> {
-        if let Some(canvas_rect_offset_from_cached) =
-            self.cached_canvas_rect().contains_with_offset(canvas_rect)
-        {
-            Some(
+        self.cached_canvas_rect()
+            .contains_with_offset(canvas_rect)
+            .map(|canvas_rect_offset_from_cached| {
                 RasterWindow::new(
                     &self.cached_chunk,
                     canvas_rect_offset_from_cached,
                     canvas_rect.dimensions.width,
                     canvas_rect.dimensions.height,
                 )
-                .unwrap(),
-            )
-        } else {
-            None
-        }
+                .unwrap()
+            })
     }
 
     pub fn has_rect_cached(&self, canvas_rect: &CanvasRect) -> bool {

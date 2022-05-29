@@ -203,17 +203,15 @@ impl CanvasRect {
 
     /// The offset of a contained rect to this rect.
     pub fn contains_with_offset(&self, other: &CanvasRect) -> Option<PixelPosition> {
-        if self.top_left.0 .0 > other.top_left.0 .0 {
-            None
-        } else if self.top_left.0 .1 > other.top_left.0 .1 {
+        if self.top_left.0 .0 > other.top_left.0 .0 || self.top_left.0 .1 > other.top_left.0 .1 {
             None
         } else {
             let bottom_right = self.bottom_right();
             let other_bottom_right = other.bottom_right();
 
-            if bottom_right.0 .0 < other_bottom_right.0 .0 {
-                None
-            } else if bottom_right.0 .1 < other_bottom_right.0 .1 {
+            if bottom_right.0 .0 < other_bottom_right.0 .0
+                || bottom_right.0 .1 < other_bottom_right.0 .1
+            {
                 None
             } else {
                 Some(PixelPosition::from((

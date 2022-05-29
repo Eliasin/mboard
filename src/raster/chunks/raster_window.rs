@@ -1,7 +1,6 @@
 use std::fmt::Display;
 
 use crate::raster::{
-    pixels::colors,
     position::{Dimensions, DrawPosition, PixelPosition},
     Pixel,
 };
