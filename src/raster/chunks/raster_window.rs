@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, mem::MaybeUninit};
 
 use crate::raster::{
     position::{Dimensions, DrawPosition, PixelPosition},
@@ -117,7 +117,8 @@ impl<'a> RasterWindow<'a> {
 
     /// Creates a raster chunk by copying the data in a window.
     pub fn to_chunk(&self) -> RasterChunk {
-        let mut chunk_pixels = Vec::with_capacity(self.dimensions.width * self.dimensions.height);
+        let mut chunk_pixels: Box<[MaybeUninit<Pixel>]> =
+            Box::new_uninit_slice(self.dimensions.width * self.dimensions.height);
 
         for row in 0..self.dimensions.height {
             let row_start_position = (0, row);
@@ -130,13 +131,20 @@ impl<'a> RasterWindow<'a> {
                 .get_index_from_position(row_end_position.into())
                 .unwrap();
 
-            chunk_pixels.extend_from_slice(
+            let row_start_new_index = row * self.dimensions.width;
+            let row_end_new_index = row * self.dimensions.width + self.dimensions.width - 1;
+
+            MaybeUninit::write_slice(
+                &mut chunk_pixels[row_start_new_index..(row_end_new_index + 1)],
                 &self.backing[row_start_source_index..(row_end_source_index + 1)],
             );
         }
 
+        // We initialize the entire chunk within the for loop, so this is sound
+        let chunk_pixels = unsafe { std::mem::transmute::<_, Box<[Pixel]>>(chunk_pixels) };
+
         RasterChunk {
-            pixels: chunk_pixels.into_boxed_slice(),
+            pixels: chunk_pixels,
             dimensions: self.dimensions,
         }
     }
