@@ -1,6 +1,7 @@
 use std::fmt::Display;
 
 use crate::raster::{
+    pixels::colors,
     position::{Dimensions, DrawPosition, PixelPosition},
     Pixel,
 };
@@ -117,21 +118,26 @@ impl<'a> RasterWindow<'a> {
 
     /// Creates a raster chunk by copying the data in a window.
     pub fn to_chunk(&self) -> RasterChunk {
-        let mut rect = Vec::<Pixel>::with_capacity(self.dimensions.width * self.dimensions.height);
+        let mut chunk_pixels = Vec::with_capacity(self.dimensions.width * self.dimensions.height);
 
         for row in 0..self.dimensions.height {
-            for column in 0..self.dimensions.width {
-                let source_position = (column, row);
+            let row_start_position = (0, row);
+            let row_start_source_index = self
+                .get_index_from_position(row_start_position.into())
+                .unwrap();
 
-                let source_index = self
-                    .get_index_from_position(source_position.into())
-                    .unwrap();
-                rect.push(self.backing[source_index]);
-            }
+            let row_end_position = (self.dimensions.width - 1, row);
+            let row_end_source_index = self
+                .get_index_from_position(row_end_position.into())
+                .unwrap();
+
+            chunk_pixels.extend_from_slice(
+                &self.backing[row_start_source_index..(row_end_source_index + 1)],
+            );
         }
 
         RasterChunk {
-            pixels: rect.into_boxed_slice(),
+            pixels: chunk_pixels.into_boxed_slice(),
             dimensions: self.dimensions,
         }
     }
