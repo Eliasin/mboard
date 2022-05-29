@@ -81,7 +81,7 @@ impl Pixel {
     }
 
     #[inline(always)]
-    fn composite_norm_component(c1: u32, a1: u32, c2: u32, a2: u32, a_o: u32) -> u32 {
+    fn composite_component(c1: u32, a1: u32, c2: u32, a2: u32, a_o: u32) -> u32 {
         if a_o == 0 {
             return 255;
         }
@@ -98,9 +98,9 @@ impl Pixel {
         let a_o_u32 = a_o as u32;
 
         let (nr, ng, nb) = (
-            Pixel::composite_norm_component(r1, a1, r2, a2, a_o_u32),
-            Pixel::composite_norm_component(g1, a1, g2, a2, a_o_u32),
-            Pixel::composite_norm_component(b1, a1, b2, a2, a_o_u32),
+            Pixel::composite_component(r1, a1, r2, a2, a_o_u32),
+            Pixel::composite_component(g1, a1, g2, a2, a_o_u32),
+            Pixel::composite_component(b1, a1, b2, a2, a_o_u32),
         );
 
         self.0 = nr + (ng << 8) + (nb << 16) + (a_o << 24);
