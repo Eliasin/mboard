@@ -1,5 +1,7 @@
 use std::{fmt::Display, ops::DerefMut};
 
+use bumpalo::Bump;
+
 use crate::raster::{
     pixels::colors,
     position::{Dimensions, DrawPosition, PixelPosition},
@@ -15,6 +17,7 @@ use super::{
 };
 
 pub type BoxRasterChunk = RasterChunk<Box<[Pixel]>>;
+pub type BumpRasterChunk<'bump> = RasterChunk<bumpalo::boxed::Box<'bump, [Pixel]>>;
 
 /// A square collection of pixels.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -300,13 +303,13 @@ impl<T: DerefMut<Target = [Pixel]>> RasterChunk<T> {
     }
 }
 
-impl RasterChunk<Box<[Pixel]>> {
+impl BoxRasterChunk {
     pub fn into_pixels(self) -> Box<[Pixel]> {
         self.pixels
     }
 
     /// Create a new raster chunk filled in with a pixel value.
-    pub fn new_fill(pixel: Pixel, width: usize, height: usize) -> RasterChunk<Box<[Pixel]>> {
+    pub fn new_fill(pixel: Pixel, width: usize, height: usize) -> BoxRasterChunk {
         let pixels = vec![pixel; width * height];
 
         RasterChunk {
@@ -320,7 +323,7 @@ impl RasterChunk<Box<[Pixel]>> {
         f: fn(PixelPosition) -> Pixel,
         width: usize,
         height: usize,
-    ) -> RasterChunk<Box<[Pixel]>> {
+    ) -> BoxRasterChunk {
         let mut pixels = vec![colors::transparent(); width * height];
 
         for row in 0..width {
@@ -336,8 +339,8 @@ impl RasterChunk<Box<[Pixel]>> {
     }
 
     /// Create a new raster chunk that is completely transparent.
-    pub fn new(width: usize, height: usize) -> RasterChunk<Box<[Pixel]>> {
-        RasterChunk::new_fill(colors::transparent(), width, height)
+    pub fn new(width: usize, height: usize) -> BoxRasterChunk {
+        BoxRasterChunk::new_fill(colors::transparent(), width, height)
     }
 
     /// Derive a sub-chunk from a raster chunk. If the sub-chunk positioned at `position` is not fully contained by the source chunk,
@@ -347,7 +350,7 @@ impl RasterChunk<Box<[Pixel]>> {
         position: PixelPosition,
         width: usize,
         height: usize,
-    ) -> RasterChunk<Box<[Pixel]>> {
+    ) -> BoxRasterChunk {
         let mut rect = Vec::<Pixel>::with_capacity(width * height);
 
         for row in 0..height {
@@ -394,7 +397,7 @@ impl RasterChunk<Box<[Pixel]>> {
             return;
         }
 
-        let mut new_chunk = RasterChunk::new(new_size.width, new_size.height);
+        let mut new_chunk = BoxRasterChunk::new(new_size.width, new_size.height);
 
         for column in 0..new_size.width {
             for row in 0..new_size.height {
@@ -411,5 +414,78 @@ impl RasterChunk<Box<[Pixel]>> {
         }
 
         *self = new_chunk;
+    }
+
+    /// Scales the chunk by a factor using the nearest-neighbour algorithm and
+    /// place the result into a bump.
+    pub fn nn_scale_into_bump<'bump>(
+        &mut self,
+        new_size: Dimensions,
+        bump: &'bump mut Bump,
+    ) -> BumpRasterChunk<'bump> {
+        let mut new_chunk = BumpRasterChunk::new(new_size.width, new_size.height, bump);
+
+        for column in 0..new_size.width {
+            for row in 0..new_size.height {
+                let nearest = self
+                    .dimensions
+                    .transform_point((column, row).into(), new_size);
+
+                let source_index = self.get_index_from_position(nearest).unwrap();
+                let new_index = new_chunk
+                    .get_index_from_position((column, row).into())
+                    .unwrap();
+                new_chunk.pixels[new_index] = self.pixels[source_index];
+            }
+        }
+
+        new_chunk
+    }
+}
+
+impl<'bump> BumpRasterChunk<'bump> {
+    pub fn into_pixels(self) -> bumpalo::boxed::Box<'bump, [Pixel]> {
+        self.pixels
+    }
+
+    /// Create a new raster chunk filled in with a pixel value.
+    pub fn new_fill(
+        pixel: Pixel,
+        width: usize,
+        height: usize,
+        bump: &'bump mut Bump,
+    ) -> BumpRasterChunk {
+        let pixels = bumpalo::vec![in bump; pixel; width * height];
+
+        BumpRasterChunk {
+            pixels: pixels.into_boxed_slice(),
+            dimensions: Dimensions { width, height },
+        }
+    }
+
+    /// Create a new raster chunk where each pixel value is filled in by a closure given the pixel's location.
+    pub fn new_fill_dynamic(
+        f: fn(PixelPosition) -> Pixel,
+        width: usize,
+        height: usize,
+        bump: &'bump mut Bump,
+    ) -> BumpRasterChunk {
+        let mut pixels = bumpalo::vec![in bump; colors::transparent(); width * height];
+
+        for row in 0..width {
+            for column in 0..height {
+                pixels[row * width + column] = f(PixelPosition::from((row, column)));
+            }
+        }
+
+        BumpRasterChunk {
+            pixels: pixels.into_boxed_slice(),
+            dimensions: Dimensions { width, height },
+        }
+    }
+
+    /// Create a new raster chunk that is completely transparent.
+    pub fn new(width: usize, height: usize, bump: &'bump mut Bump) -> BumpRasterChunk {
+        BumpRasterChunk::new_fill(colors::transparent(), width, height, bump)
     }
 }
