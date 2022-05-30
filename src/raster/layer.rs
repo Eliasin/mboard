@@ -1,5 +1,5 @@
 use super::{
-    chunks::{BoxRasterChunk, RasterWindow},
+    chunks::{raster_chunk::BumpRasterChunk, BoxRasterChunk, RasterWindow},
     iter::{RasterChunkIterator, RasterChunkIteratorMut},
     pixels::{colors, Pixel},
     position::{Dimensions, DrawPosition, PixelPosition},
@@ -382,6 +382,59 @@ impl Layer for RasterLayer {
 
     fn clear(&mut self) {
         self.chunks.clear();
+    }
+
+    fn rasterize_into_bump<'bump>(
+        &mut self,
+        view: &CanvasView,
+        bump: &'bump bumpalo::Bump,
+    ) -> BumpRasterChunk<'bump> {
+        let mut raster = self.rasterize_canvas_rect(CanvasRect {
+            top_left: view.top_left,
+            dimensions: view.canvas_dimensions,
+        });
+
+        raster.nn_scale_into_bump(view.view_dimensions, bump)
+    }
+
+    fn rasterize_canvas_rect_into_bump<'bump>(
+        &mut self,
+        canvas_rect: CanvasRect,
+        bump: &'bump bumpalo::Bump,
+    ) -> BumpRasterChunk<'bump> {
+        let chunk_rect = self.find_chunk_rect_in_canvas_rect(canvas_rect);
+
+        let Dimensions {
+            width: view_width,
+            height: view_height,
+        } = canvas_rect.dimensions;
+        let mut raster_result = BumpRasterChunk::new(view_width, view_height, bump);
+
+        for (raster_chunk, chunk_rect_position) in self.iter_chunks_in_rect(chunk_rect) {
+            let ChunkRectPosition {
+                top_left_in_chunk,
+                width,
+                height,
+                x_chunk_offset: _,
+                y_chunk_offset: _,
+                x_pixel_offset,
+                y_pixel_offset,
+            } = chunk_rect_position;
+
+            let raster_chunk = raster_chunk.unwrap_or(&self.blank_chunk);
+
+            let raster_window =
+                RasterWindow::new(raster_chunk, top_left_in_chunk, width, height).unwrap();
+
+            let x_pixel_offset: i64 = x_pixel_offset.try_into().unwrap();
+            let y_pixel_offset: i64 = y_pixel_offset.try_into().unwrap();
+            let draw_position_in_result: DrawPosition =
+                DrawPosition::from((x_pixel_offset, y_pixel_offset));
+
+            raster_result.blit(&raster_window, draw_position_in_result);
+        }
+
+        raster_result
     }
 }
 

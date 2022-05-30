@@ -1,12 +1,14 @@
 use std::{fmt::Display, mem::MaybeUninit};
 
+use bumpalo::Bump;
+
 use crate::raster::{
     position::{Dimensions, DrawPosition, PixelPosition},
     Pixel,
 };
 
 use super::{
-    raster_chunk::BoxRasterChunk,
+    raster_chunk::{BoxRasterChunk, BumpRasterChunk},
     util::{
         display_raster_row, translate_rect_position_to_flat_index, BoundedIndex,
         IndexableByPosition, InvalidPixelSliceSize,
@@ -145,6 +147,36 @@ impl<'a> RasterWindow<'a> {
 
         BoxRasterChunk {
             pixels: chunk_pixels,
+            dimensions: self.dimensions,
+        }
+    }
+
+    /// Creates a raster chunk in a bump by copying the data in a window.
+    pub fn to_chunk_into_bump<'bump>(&self, bump: &'bump Bump) -> BumpRasterChunk<'bump> {
+        let mut chunk_pixels: bumpalo::collections::Vec<Pixel> =
+            bumpalo::collections::Vec::with_capacity_in(
+                self.dimensions.width * self.dimensions.height,
+                bump,
+            );
+
+        for row in 0..self.dimensions.height {
+            let row_start_position = (0, row);
+            let row_start_source_index = self
+                .get_index_from_position(row_start_position.into())
+                .unwrap();
+
+            let row_end_position = (self.dimensions.width - 1, row);
+            let row_end_source_index = self
+                .get_index_from_position(row_end_position.into())
+                .unwrap();
+
+            chunk_pixels.extend_from_slice(
+                &self.backing[row_start_source_index..(row_end_source_index + 1)],
+            );
+        }
+
+        BumpRasterChunk {
+            pixels: chunk_pixels.into_boxed_slice(),
             dimensions: self.dimensions,
         }
     }

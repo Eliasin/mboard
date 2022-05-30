@@ -421,7 +421,7 @@ impl BoxRasterChunk {
     pub fn nn_scale_into_bump<'bump>(
         &mut self,
         new_size: Dimensions,
-        bump: &'bump mut Bump,
+        bump: &'bump Bump,
     ) -> BumpRasterChunk<'bump> {
         let mut new_chunk = BumpRasterChunk::new(new_size.width, new_size.height, bump);
 
@@ -453,7 +453,7 @@ impl<'bump> BumpRasterChunk<'bump> {
         pixel: Pixel,
         width: usize,
         height: usize,
-        bump: &'bump mut Bump,
+        bump: &'bump Bump,
     ) -> BumpRasterChunk {
         let pixels = bumpalo::vec![in bump; pixel; width * height];
 
@@ -468,7 +468,7 @@ impl<'bump> BumpRasterChunk<'bump> {
         f: fn(PixelPosition) -> Pixel,
         width: usize,
         height: usize,
-        bump: &'bump mut Bump,
+        bump: &'bump Bump,
     ) -> BumpRasterChunk {
         let mut pixels = bumpalo::vec![in bump; colors::transparent(); width * height];
 
@@ -485,7 +485,33 @@ impl<'bump> BumpRasterChunk<'bump> {
     }
 
     /// Create a new raster chunk that is completely transparent.
-    pub fn new(width: usize, height: usize, bump: &'bump mut Bump) -> BumpRasterChunk {
+    pub fn new(width: usize, height: usize, bump: &'bump Bump) -> BumpRasterChunk {
         BumpRasterChunk::new_fill(colors::transparent(), width, height, bump)
+    }
+
+    /// Scales the chunk by a factor using the nearest-neighbour algorithm and
+    /// place the result into a bump.
+    pub fn nn_scale_into_bump(
+        &mut self,
+        new_size: Dimensions,
+        bump: &'bump Bump,
+    ) -> BumpRasterChunk<'bump> {
+        let mut new_chunk = BumpRasterChunk::new(new_size.width, new_size.height, bump);
+
+        for column in 0..new_size.width {
+            for row in 0..new_size.height {
+                let nearest = self
+                    .dimensions
+                    .transform_point((column, row).into(), new_size);
+
+                let source_index = self.get_index_from_position(nearest).unwrap();
+                let new_index = new_chunk
+                    .get_index_from_position((column, row).into())
+                    .unwrap();
+                new_chunk.pixels[new_index] = self.pixels[source_index];
+            }
+        }
+
+        new_chunk
     }
 }

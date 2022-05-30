@@ -1,10 +1,11 @@
 use crate::raster::{
-    chunks::BoxRasterChunk,
+    chunks::{raster_chunk::BumpRasterChunk, BoxRasterChunk},
     layer::ChunkPosition,
     pixels::colors,
     position::{Dimensions, PixelPosition, Scale},
     RasterLayer, RasterLayerAction,
 };
+use bumpalo::Bump;
 use enum_dispatch::enum_dispatch;
 
 mod cache;
@@ -247,6 +248,16 @@ pub enum LayerImplementation {
 pub trait Layer {
     fn rasterize(&mut self, view: &CanvasView) -> BoxRasterChunk;
     fn rasterize_canvas_rect(&mut self, canvas_rect: CanvasRect) -> BoxRasterChunk;
+    fn rasterize_into_bump<'bump>(
+        &mut self,
+        view: &CanvasView,
+        bump: &'bump Bump,
+    ) -> BumpRasterChunk<'bump>;
+    fn rasterize_canvas_rect_into_bump<'bump>(
+        &mut self,
+        canvas_rect: CanvasRect,
+        bump: &'bump Bump,
+    ) -> BumpRasterChunk<'bump>;
     fn clear(&mut self);
 }
 
@@ -270,6 +281,22 @@ impl Canvas {
         raster
     }
 
+    pub fn render_into_bump<'bump>(
+        &mut self,
+        view: &CanvasView,
+        bump: &'bump Bump,
+    ) -> BumpRasterChunk<'bump> {
+        let mut raster = self.render_canvas_rect_into_bump(
+            CanvasRect {
+                top_left: view.top_left,
+                dimensions: view.canvas_dimensions,
+            },
+            bump,
+        );
+
+        raster.nn_scale_into_bump(view.view_dimensions, bump)
+    }
+
     fn rasterize_canvas_rect(
         layers: &mut Vec<LayerImplementation>,
         canvas_rect: CanvasRect,
@@ -277,9 +304,12 @@ impl Canvas {
         let Dimensions { width, height } = canvas_rect.dimensions;
         let mut base = BoxRasterChunk::new_fill(colors::white(), width, height);
 
+        let layer_bump = Bump::new();
         for layer in layers {
             base.composite_over(
-                &layer.rasterize_canvas_rect(canvas_rect).as_window(),
+                &layer
+                    .rasterize_canvas_rect_into_bump(canvas_rect, &layer_bump)
+                    .as_window(),
                 (0, 0).into(),
             );
         }
@@ -294,6 +324,19 @@ impl Canvas {
                 Canvas::rasterize_canvas_rect(layers, *c)
             })
             .to_chunk()
+    }
+
+    pub fn render_canvas_rect_into_bump<'bump>(
+        &mut self,
+        canvas_rect: CanvasRect,
+        bump: &'bump Bump,
+    ) -> BumpRasterChunk<'bump> {
+        let layers = &mut self.layers;
+        self.rasterization_cache
+            .get_chunk_or_rasterize(&canvas_rect, &mut |c| {
+                Canvas::rasterize_canvas_rect(layers, *c)
+            })
+            .to_chunk_into_bump(bump)
     }
 
     pub fn add_layer(&mut self, layer: LayerImplementation) {
