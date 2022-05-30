@@ -6,7 +6,7 @@ use crate::raster::{
 };
 
 use super::{
-    raster_chunk::RasterChunk,
+    raster_chunk::BoxRasterChunk,
     util::{
         display_raster_row, translate_rect_position_to_flat_index, BoundedIndex,
         IndexableByPosition, InvalidPixelSliceSize,
@@ -39,7 +39,7 @@ impl<'a> Display for RasterWindow<'a> {
 impl<'a> RasterWindow<'a> {
     /// Creates a raster chunk window from a sub-rectangle of a raster chunk. The window area must be completely contained in the chunk.
     pub fn new(
-        chunk: &'a RasterChunk,
+        chunk: &'a BoxRasterChunk,
         top_left: PixelPosition,
         width: usize,
         height: usize,
@@ -116,7 +116,7 @@ impl<'a> RasterWindow<'a> {
     }
 
     /// Creates a raster chunk by copying the data in a window.
-    pub fn to_chunk(&self) -> RasterChunk {
+    pub fn to_chunk(&self) -> BoxRasterChunk {
         let mut chunk_pixels: Box<[MaybeUninit<Pixel>]> =
             Box::new_uninit_slice(self.dimensions.width * self.dimensions.height);
 
@@ -143,7 +143,7 @@ impl<'a> RasterWindow<'a> {
         // We initialize the entire chunk within the for loop, so this is sound
         let chunk_pixels = unsafe { std::mem::transmute::<_, Box<[Pixel]>>(chunk_pixels) };
 
-        RasterChunk {
+        BoxRasterChunk {
             pixels: chunk_pixels,
             dimensions: self.dimensions,
         }

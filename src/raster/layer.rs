@@ -1,5 +1,5 @@
 use super::{
-    chunks::{RasterChunk, RasterWindow},
+    chunks::{BoxRasterChunk, RasterWindow},
     iter::{RasterChunkIterator, RasterChunkIteratorMut},
     pixels::{colors, Pixel},
     position::{Dimensions, DrawPosition, PixelPosition},
@@ -14,8 +14,8 @@ use std::{collections::HashMap, convert::TryInto};
 /// be composited onto a raster layer for presentation.
 pub struct RasterLayer {
     pub(super) chunk_size: usize,
-    pub(super) chunks: HashMap<ChunkPosition, RasterChunk>,
-    blank_chunk: RasterChunk,
+    pub(super) chunks: HashMap<ChunkPosition, BoxRasterChunk>,
+    blank_chunk: BoxRasterChunk,
 }
 
 impl RasterLayer {
@@ -23,7 +23,7 @@ impl RasterLayer {
         RasterLayer {
             chunk_size,
             chunks: HashMap::new(),
-            blank_chunk: RasterChunk::new_fill(colors::transparent(), chunk_size, chunk_size),
+            blank_chunk: BoxRasterChunk::new_fill(colors::transparent(), chunk_size, chunk_size),
         }
     }
 }
@@ -192,7 +192,7 @@ impl RasterLayer {
             if let Some(raster_chunk) = raster_chunk {
                 raster_chunk.composite_over(source, top_left_in_chunk.into());
             } else {
-                let mut raster_chunk = RasterChunk::new(chunk_size, chunk_size);
+                let mut raster_chunk = BoxRasterChunk::new(chunk_size, chunk_size);
                 let chunk_position = chunk_rect
                     .top_left_chunk
                     .translate((x_chunk_offset as i64, y_chunk_offset as i64));
@@ -234,12 +234,12 @@ impl RasterLayer {
                         y_pixel_offset: _,
                     } = chunk_rect_position;
 
-                    let draw_chunk = RasterChunk::new_fill(pixel, width, height);
+                    let draw_chunk = BoxRasterChunk::new_fill(pixel, width, height);
                     if let Some(raster_chunk) = raster_chunk {
                         raster_chunk
                             .composite_over(&draw_chunk.as_window(), top_left_in_chunk.into());
                     } else {
-                        let mut raster_chunk = RasterChunk::new(chunk_size, chunk_size);
+                        let mut raster_chunk = BoxRasterChunk::new(chunk_size, chunk_size);
                         let chunk_position = chunk_rect
                             .top_left_chunk
                             .translate((x_chunk_offset as i64, y_chunk_offset as i64));
@@ -294,13 +294,13 @@ impl RasterLayer {
                         y_pixel_offset: _,
                     } = chunk_rect_position;
 
-                    let draw_chunk = RasterChunk::new_fill(pixel, width, height);
+                    let draw_chunk = BoxRasterChunk::new_fill(pixel, width, height);
 
                     if let Some(raster_chunk) = raster_chunk {
                         raster_chunk
                             .composite_over(&draw_chunk.as_window(), top_left_in_chunk.into());
                     } else {
-                        let mut raster_chunk = RasterChunk::new(chunk_size, chunk_size);
+                        let mut raster_chunk = BoxRasterChunk::new(chunk_size, chunk_size);
                         let chunk_position = chunk_rect
                             .top_left_chunk
                             .translate((x_chunk_offset as i64, y_chunk_offset as i64));
@@ -333,7 +333,7 @@ impl RasterLayer {
 }
 
 impl Layer for RasterLayer {
-    fn rasterize(&mut self, view: &CanvasView) -> RasterChunk {
+    fn rasterize(&mut self, view: &CanvasView) -> BoxRasterChunk {
         let mut raster = self.rasterize_canvas_rect(CanvasRect {
             top_left: view.top_left,
             dimensions: view.canvas_dimensions,
@@ -344,14 +344,14 @@ impl Layer for RasterLayer {
         raster
     }
 
-    fn rasterize_canvas_rect(&mut self, canvas_rect: CanvasRect) -> RasterChunk {
+    fn rasterize_canvas_rect(&mut self, canvas_rect: CanvasRect) -> BoxRasterChunk {
         let chunk_rect = self.find_chunk_rect_in_canvas_rect(canvas_rect);
 
         let Dimensions {
             width: view_width,
             height: view_height,
         } = canvas_rect.dimensions;
-        let mut raster_result = RasterChunk::new(view_width, view_height);
+        let mut raster_result = BoxRasterChunk::new(view_width, view_height);
 
         for (raster_chunk, chunk_rect_position) in self.iter_chunks_in_rect(chunk_rect) {
             let ChunkRectPosition {
@@ -378,6 +378,10 @@ impl Layer for RasterLayer {
         }
 
         raster_result
+    }
+
+    fn clear(&mut self) {
+        self.chunks.clear();
     }
 }
 
@@ -471,7 +475,7 @@ mod tests {
     fn test_rasterize_offset() {
         let mut raster_layer = RasterLayer::new(10);
 
-        let red_chunk = RasterChunk::new_fill(colors::red(), 10, 10);
+        let red_chunk = BoxRasterChunk::new_fill(colors::red(), 10, 10);
         raster_layer
             .chunks
             .insert(ChunkPosition((0, 0)), red_chunk.clone());
@@ -480,7 +484,7 @@ mod tests {
 
         view.translate((-5, 0));
 
-        let mut expected_result = RasterChunk::new(10, 10);
+        let mut expected_result = BoxRasterChunk::new(10, 10);
         expected_result.fill_rect(colors::red(), DrawPosition::from((5, 0)), 5, 10);
 
         let raster = raster_layer.rasterize(&view);
@@ -492,7 +496,7 @@ mod tests {
     fn test_rasterization_easy() {
         let mut raster_layer = RasterLayer::new(10);
 
-        let red_chunk = RasterChunk::new_fill(colors::red(), 10, 10);
+        let red_chunk = BoxRasterChunk::new_fill(colors::red(), 10, 10);
 
         raster_layer
             .chunks
@@ -500,7 +504,7 @@ mod tests {
 
         let view = CanvasView::new(11, 11);
 
-        let mut expected_result = RasterChunk::new(11, 11);
+        let mut expected_result = BoxRasterChunk::new(11, 11);
 
         expected_result.blit(&red_chunk.as_window(), DrawPosition::from((0, 0)));
 
@@ -513,8 +517,8 @@ mod tests {
     fn test_rasterization_medium() {
         let mut raster_layer = RasterLayer::new(10);
 
-        let red_chunk = RasterChunk::new_fill(colors::red(), 10, 10);
-        let green_chunk = RasterChunk::new_fill(colors::green(), 10, 10);
+        let red_chunk = BoxRasterChunk::new_fill(colors::red(), 10, 10);
+        let green_chunk = BoxRasterChunk::new_fill(colors::green(), 10, 10);
 
         raster_layer
             .chunks
@@ -525,7 +529,7 @@ mod tests {
 
         let view = CanvasView::new(15, 10);
 
-        let mut expected_result = RasterChunk::new(15, 10);
+        let mut expected_result = BoxRasterChunk::new(15, 10);
 
         expected_result.blit(&red_chunk.as_window(), DrawPosition::from((0, 0)));
         expected_result.blit(&green_chunk.as_window(), DrawPosition::from((10, 0)));
@@ -539,8 +543,8 @@ mod tests {
     fn test_rasterization_hard() {
         let mut raster_layer = RasterLayer::new(100);
 
-        let red_chunk = RasterChunk::new_fill(colors::red(), 100, 100);
-        let green_chunk = RasterChunk::new_fill(colors::green(), 100, 100);
+        let red_chunk = BoxRasterChunk::new_fill(colors::red(), 100, 100);
+        let green_chunk = BoxRasterChunk::new_fill(colors::green(), 100, 100);
 
         raster_layer
             .chunks
@@ -552,7 +556,7 @@ mod tests {
         let mut view = CanvasView::new(150, 200);
         view.translate((-275, -115));
 
-        let mut expected_result = RasterChunk::new(150, 200);
+        let mut expected_result = BoxRasterChunk::new(150, 200);
 
         expected_result.blit(&red_chunk.as_window(), DrawPosition::from((250, 100)));
         expected_result.blit(
@@ -583,7 +587,7 @@ mod tests {
         let view = CanvasView::new(10, 10);
         let raster = raster_layer.rasterize(&view);
 
-        let expected = RasterChunk::new_fill(colors::red(), 10, 10);
+        let expected = BoxRasterChunk::new_fill(colors::red(), 10, 10);
 
         assert_raster_eq!(raster, expected);
     }
@@ -606,9 +610,9 @@ mod tests {
         let view = CanvasView::new(10, 10);
         let raster = raster_layer.rasterize(&view);
 
-        let mut expected = RasterChunk::new(10, 10);
+        let mut expected = BoxRasterChunk::new(10, 10);
 
-        let red_chunk = RasterChunk::new_fill(colors::red(), 5, 5);
+        let red_chunk = BoxRasterChunk::new_fill(colors::red(), 5, 5);
 
         expected.blit(&red_chunk.as_window(), (0, 0).into());
 
@@ -642,10 +646,10 @@ mod tests {
         let view = CanvasView::new(15, 10);
         let raster = raster_layer.rasterize(&view);
 
-        let mut expected = RasterChunk::new(15, 10);
+        let mut expected = BoxRasterChunk::new(15, 10);
 
-        let red_chunk = RasterChunk::new_fill(colors::red(), 5, 5);
-        let blue_chunk = RasterChunk::new_fill(colors::blue(), 5, 5);
+        let red_chunk = BoxRasterChunk::new_fill(colors::red(), 5, 5);
+        let blue_chunk = BoxRasterChunk::new_fill(colors::blue(), 5, 5);
 
         expected.blit(&red_chunk.as_window(), (0, 0).into());
         expected.blit(&blue_chunk.as_window(), (6, 0).into());
@@ -674,7 +678,7 @@ mod tests {
 
         let raster = raster_layer.rasterize(&view);
 
-        let mut expected = RasterChunk::new(10, 10);
+        let mut expected = BoxRasterChunk::new(10, 10);
         expected.fill_rect(colors::red(), (4, 4).into(), 2, 2);
 
         expected.nn_scale(Dimensions {
@@ -703,7 +707,7 @@ mod tests {
 
         let raster = raster_layer.rasterize(&view);
 
-        let mut expected = RasterChunk::new(30, 30);
+        let mut expected = BoxRasterChunk::new(30, 30);
         let oval = Oval::build_from_bound(10, 10).color(colors::red()).build();
         expected.composite_over(&oval.rasterize().as_window(), DrawPosition::from((10, 10)));
 
@@ -728,7 +732,7 @@ mod tests {
 
         let raster = raster_layer.rasterize(&view);
 
-        let mut expected = RasterChunk::new(30, 30);
+        let mut expected = BoxRasterChunk::new(30, 30);
         let oval = Oval::build_from_bound(10, 10).color(colors::red()).build();
         expected.composite_over(&oval.rasterize().as_window(), DrawPosition::from((10, 15)));
 
@@ -753,7 +757,7 @@ mod tests {
 
         let raster = raster_layer.rasterize(&view);
 
-        let mut expected = RasterChunk::new(60, 60);
+        let mut expected = BoxRasterChunk::new(60, 60);
         let oval = Oval::build_from_bound(10, 10).color(colors::red()).build();
         expected.composite_over(&oval.rasterize().as_window(), DrawPosition::from((25, 10)));
 

@@ -1,5 +1,5 @@
 use super::{
-    chunks::RasterChunk,
+    chunks::BoxRasterChunk,
     layer::{ChunkPosition, ChunkRect, ChunkRectPosition},
     RasterLayer,
 };
@@ -30,7 +30,7 @@ impl<T: RasterLayerReference> GenericRasterChunkIterator<T> {
 }
 
 impl<'a> Iterator for GenericRasterChunkIterator<&'a RasterLayer> {
-    type Item = (Option<&'a RasterChunk>, ChunkRectPosition);
+    type Item = (Option<&'a BoxRasterChunk>, ChunkRectPosition);
 
     fn next(&mut self) -> Option<Self::Item> {
         let chunk_rect = self.chunk_rect;
@@ -111,15 +111,15 @@ impl<'a> Iterator for GenericRasterChunkIterator<&'a RasterLayer> {
 }
 
 impl<'a> Iterator for GenericRasterChunkIterator<&'a mut RasterLayer> {
-    type Item = (Option<&'a mut RasterChunk>, ChunkRectPosition);
+    type Item = (Option<&'a mut BoxRasterChunk>, ChunkRectPosition);
 
     fn next<'b>(&'b mut self) -> Option<Self::Item> {
         let chunk_rect = self.chunk_rect;
         let chunk_size = self.raster_layer.chunk_size;
         let chunks = unsafe {
             std::mem::transmute::<
-                &'b mut HashMap<ChunkPosition, RasterChunk>,
-                &'a mut HashMap<ChunkPosition, RasterChunk>,
+                &'b mut HashMap<ChunkPosition, BoxRasterChunk>,
+                &'a mut HashMap<ChunkPosition, BoxRasterChunk>,
             >(&mut self.raster_layer.chunks)
         };
 

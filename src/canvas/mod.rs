@@ -1,5 +1,5 @@
 use crate::raster::{
-    chunks::RasterChunk,
+    chunks::BoxRasterChunk,
     layer::ChunkPosition,
     pixels::colors,
     position::{Dimensions, PixelPosition, Scale},
@@ -245,8 +245,9 @@ pub enum LayerImplementation {
 
 #[enum_dispatch(LayerImplementation)]
 pub trait Layer {
-    fn rasterize(&mut self, view: &CanvasView) -> RasterChunk;
-    fn rasterize_canvas_rect(&mut self, canvas_rect: CanvasRect) -> RasterChunk;
+    fn rasterize(&mut self, view: &CanvasView) -> BoxRasterChunk;
+    fn rasterize_canvas_rect(&mut self, canvas_rect: CanvasRect) -> BoxRasterChunk;
+    fn clear(&mut self);
 }
 
 /// A collection of layers that can be rendered.
@@ -258,7 +259,7 @@ pub struct Canvas {
 }
 
 impl Canvas {
-    pub fn render(&mut self, view: &CanvasView) -> RasterChunk {
+    pub fn render(&mut self, view: &CanvasView) -> BoxRasterChunk {
         let mut raster = self.render_canvas_rect(CanvasRect {
             top_left: view.top_left,
             dimensions: view.canvas_dimensions,
@@ -272,9 +273,9 @@ impl Canvas {
     fn rasterize_canvas_rect(
         layers: &mut Vec<LayerImplementation>,
         canvas_rect: CanvasRect,
-    ) -> RasterChunk {
+    ) -> BoxRasterChunk {
         let Dimensions { width, height } = canvas_rect.dimensions;
-        let mut base = RasterChunk::new_fill(colors::white(), width, height);
+        let mut base = BoxRasterChunk::new_fill(colors::white(), width, height);
 
         for layer in layers {
             base.composite_over(
@@ -286,7 +287,7 @@ impl Canvas {
         base
     }
 
-    pub fn render_canvas_rect(&mut self, canvas_rect: CanvasRect) -> RasterChunk {
+    pub fn render_canvas_rect(&mut self, canvas_rect: CanvasRect) -> BoxRasterChunk {
         let layers = &mut self.layers;
         self.rasterization_cache
             .get_chunk_or_rasterize(&canvas_rect, &mut |c| {

@@ -1,7 +1,7 @@
 use std::ops::Mul;
 
 use super::{
-    chunks::{RasterChunk, RasterWindow},
+    chunks::{BoxRasterChunk, RasterWindow},
     pixels::colors,
     position::PixelPosition,
     Pixel,
@@ -25,7 +25,7 @@ pub trait Polygon {
 /// A way to rasterize a polygon.
 pub trait RasterPolygon {
     /// Rasterization of the polygon as a raster chunk.
-    fn rasterize(&self) -> RasterChunk;
+    fn rasterize(&self) -> BoxRasterChunk;
 }
 
 fn greyscale_from_proportion_inside(proportion_inside: u8) -> Pixel {
@@ -35,7 +35,7 @@ fn greyscale_from_proportion_inside(proportion_inside: u8) -> Pixel {
 }
 
 impl<T: Polygon> RasterPolygon for T {
-    fn rasterize(&self) -> RasterChunk {
+    fn rasterize(&self) -> BoxRasterChunk {
         let bounding_box = self.bounding_box();
 
         let (width, height) = bounding_box;

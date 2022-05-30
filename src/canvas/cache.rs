@@ -1,7 +1,7 @@
 use lru::LruCache;
 
 use crate::raster::{
-    chunks::{RasterChunk, RasterWindow},
+    chunks::{BoxRasterChunk, RasterWindow},
     position::DrawPosition,
     shapes::{Oval, RasterPolygon},
 };
@@ -9,7 +9,7 @@ use crate::raster::{
 use super::{CanvasPosition, CanvasRect};
 
 pub struct ShapeCache {
-    oval_cache: LruCache<Oval, RasterChunk>,
+    oval_cache: LruCache<Oval, BoxRasterChunk>,
 }
 
 impl ShapeCache {
@@ -19,7 +19,7 @@ impl ShapeCache {
         }
     }
 
-    pub fn get_oval(&mut self, oval: Oval) -> &RasterChunk {
+    pub fn get_oval(&mut self, oval: Oval) -> &BoxRasterChunk {
         self.oval_cache
             .get_or_insert(oval, || oval.rasterize())
             .unwrap()
@@ -38,7 +38,7 @@ pub struct CanvasRasterizationCache(Option<CachedCanvasRaster>);
 impl CanvasRasterizationCache {
     pub fn rerender_canvas_rect<R>(&mut self, canvas_rect: &CanvasRect, rasterizer: &mut R)
     where
-        R: FnMut(&CanvasRect) -> RasterChunk,
+        R: FnMut(&CanvasRect) -> BoxRasterChunk,
     {
         if let Some(cached_canvas_raster) = &mut self.0 {
             if let Some(rect_offset) = cached_canvas_raster
@@ -61,7 +61,7 @@ impl CanvasRasterizationCache {
         rasterizer: &mut R,
     ) -> RasterWindow<'a>
     where
-        R: FnMut(&CanvasRect) -> RasterChunk,
+        R: FnMut(&CanvasRect) -> BoxRasterChunk,
     {
         // We don't use an if-let here due to some lifetime issues
         // it causes, primarily, this one https://github.com/rust-lang/rust/issues/54663
@@ -87,7 +87,7 @@ impl CanvasRasterizationCache {
         rasterizer: &mut R,
     ) -> RasterWindow
     where
-        R: FnMut(&CanvasRect) -> RasterChunk,
+        R: FnMut(&CanvasRect) -> BoxRasterChunk,
     {
         let cached_canvas_raster = self.0.get_or_insert_with(|| {
             // Pre-render surrounding area
@@ -110,7 +110,7 @@ impl CanvasRasterizationCache {
 
 struct CachedCanvasRaster {
     cached_chunk_position: CanvasPosition,
-    cached_chunk: RasterChunk,
+    cached_chunk: BoxRasterChunk,
 }
 
 impl CachedCanvasRaster {
@@ -146,7 +146,7 @@ mod tests {
         assert_raster_eq,
         canvas::{CanvasPosition, CanvasRect},
         raster::{
-            chunks::RasterChunk, pixels::colors, position::Dimensions, position::PixelPosition,
+            chunks::BoxRasterChunk, pixels::colors, position::Dimensions, position::PixelPosition,
         },
     };
 
@@ -157,7 +157,7 @@ mod tests {
     fn test_canvas_rect_rasterization_cache_caches_renders() {
         let mut cache = CanvasRasterizationCache::default();
 
-        let render_chunk = RasterChunk::new_fill(colors::green(), 512, 512);
+        let render_chunk = BoxRasterChunk::new_fill(colors::green(), 512, 512);
 
         let canvas_rect = CanvasRect {
             top_left: CanvasPosition((256, 256)),
@@ -168,7 +168,7 @@ mod tests {
         };
 
         cache
-            .get_chunk_or_rasterize(&canvas_rect, &mut |rect: &CanvasRect| -> RasterChunk {
+            .get_chunk_or_rasterize(&canvas_rect, &mut |rect: &CanvasRect| -> BoxRasterChunk {
                 let position =
                     PixelPosition((rect.top_left.0 .0 as usize, rect.top_left.0 .1 as usize));
 
@@ -176,7 +176,7 @@ mod tests {
             })
             .to_chunk();
 
-        let expected_cached_chunk = RasterChunk::new_fill(colors::green(), 64 * 3, 64 * 3);
+        let expected_cached_chunk = BoxRasterChunk::new_fill(colors::green(), 64 * 3, 64 * 3);
 
         let cached_canvas_raster = cache.0.unwrap();
         let cached_chunk = cached_canvas_raster.cached_chunk;
@@ -193,8 +193,8 @@ mod tests {
     fn test_canvas_rect_rasterization_cache_doesnt_rerender() {
         // Ensure that the cache does not re-render unnecessarily
 
-        let render_chunk = RasterChunk::new_fill(colors::green(), 64, 64);
-        let cached_chunk = RasterChunk::new_fill(colors::red(), 64, 64);
+        let render_chunk = BoxRasterChunk::new_fill(colors::green(), 64, 64);
+        let cached_chunk = BoxRasterChunk::new_fill(colors::red(), 64, 64);
 
         let mut cache = CanvasRasterizationCache(Some(CachedCanvasRaster {
             cached_chunk_position: CanvasPosition((0, 0)),
@@ -210,7 +210,7 @@ mod tests {
         };
 
         let cache_result = cache
-            .get_chunk_or_rasterize(&canvas_rect, &mut |rect: &CanvasRect| -> RasterChunk {
+            .get_chunk_or_rasterize(&canvas_rect, &mut |rect: &CanvasRect| -> BoxRasterChunk {
                 let position =
                     PixelPosition((rect.top_left.0 .0 as usize, rect.top_left.0 .1 as usize));
 

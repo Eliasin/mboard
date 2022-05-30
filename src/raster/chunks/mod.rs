@@ -1,6 +1,6 @@
 //! Collections of raster data and ways to draw and manipulate them.
 //!
-//! `RasterChunk` is a square-sized chunk of owned raster data that
+//! `BoxRasterChunk` is a square-sized chunk of owned raster data that
 //! can be blitted and alpha composited onto.
 //!
 //! `RasterWindow` is a borrow of some raster data, this can be a full
@@ -10,7 +10,7 @@ pub mod raster_chunk;
 pub mod raster_window;
 mod util;
 
-pub use raster_chunk::RasterChunk;
+pub use raster_chunk::BoxRasterChunk;
 pub use raster_window::RasterWindow;
 pub use util::IndexableByPosition;
 
@@ -29,7 +29,7 @@ mod tests {
     use crate::raster::Pixel;
 
     #[cfg(test)]
-    use super::raster_chunk::*;
+    use super::raster_chunk::BoxRasterChunk;
     #[cfg(test)]
     use super::raster_window::*;
     #[cfg(test)]
@@ -37,7 +37,7 @@ mod tests {
 
     #[test]
     fn test_position_translation() {
-        let raster_chunk = RasterChunk::new(256, 256);
+        let raster_chunk = BoxRasterChunk::new(256, 256);
 
         assert_eq!(Some(0), raster_chunk.get_index_from_position((0, 0).into()));
         assert_eq!(
@@ -68,7 +68,7 @@ mod tests {
 
     #[test]
     fn test_bounded_position_translation() {
-        let raster_chunk = RasterChunk::new(256, 256);
+        let raster_chunk = BoxRasterChunk::new(256, 256);
 
         assert_eq!(
             BoundedIndex {
@@ -133,7 +133,7 @@ mod tests {
         pixels[5 + 2] = colors::blue();
         pixels[5 + 4] = colors::red();
 
-        let raster_chunk = RasterChunk::from_vec(pixels, 5, 5).unwrap();
+        let raster_chunk = BoxRasterChunk::from_vec(pixels, 5, 5).unwrap();
 
         let chunk_row = raster_chunk.get_row_slice(1).unwrap();
         let mut expected_chunk_row = [colors::transparent(); 5];
@@ -158,9 +158,9 @@ mod tests {
 
     #[test]
     fn test_blitting() {
-        let mut raster_chunk = RasterChunk::new_fill(colors::red(), 8, 8);
+        let mut raster_chunk = BoxRasterChunk::new_fill(colors::red(), 8, 8);
 
-        let blit_source = RasterChunk::new_fill(colors::blue(), 2, 2);
+        let blit_source = BoxRasterChunk::new_fill(colors::blue(), 2, 2);
 
         raster_chunk.blit(&blit_source.as_window(), (2, 2).into());
 
@@ -171,16 +171,16 @@ mod tests {
         pixels[3 * 8 + 2] = colors::blue();
         pixels[3 * 8 + 3] = colors::blue();
 
-        let expected_raster_chunk = RasterChunk::from_vec(pixels, 8, 8).unwrap();
+        let expected_raster_chunk = BoxRasterChunk::from_vec(pixels, 8, 8).unwrap();
 
         assert_eq!(expected_raster_chunk.pixels(), raster_chunk.pixels());
     }
 
     #[test]
     fn test_complete_blit() {
-        let mut raster_chunk = RasterChunk::new_fill(colors::red(), 8, 8);
+        let mut raster_chunk = BoxRasterChunk::new_fill(colors::red(), 8, 8);
 
-        let blit_source = RasterChunk::new_fill(colors::blue(), 8, 8);
+        let blit_source = BoxRasterChunk::new_fill(colors::blue(), 8, 8);
 
         raster_chunk.blit(&blit_source.as_window(), (0, 0).into());
 
@@ -189,9 +189,9 @@ mod tests {
 
     #[test]
     fn test_blit_into_smaller() {
-        let mut raster_chunk = RasterChunk::new(1, 1);
+        let mut raster_chunk = BoxRasterChunk::new(1, 1);
 
-        let blit_source = RasterChunk::new_fill(colors::blue(), 2, 2);
+        let blit_source = BoxRasterChunk::new_fill(colors::blue(), 2, 2);
 
         raster_chunk.blit(&blit_source.as_window(), (0, 0).into());
 
@@ -201,27 +201,27 @@ mod tests {
     /// Test that blits that are partially/totally outside the chunk work as expected.
     #[test]
     fn test_blit_overflow() {
-        let mut raster_chunk = RasterChunk::new_fill(colors::red(), 8, 8);
+        let mut raster_chunk = BoxRasterChunk::new_fill(colors::red(), 8, 8);
 
-        let blit_source = RasterChunk::new_fill(colors::blue(), 2, 2);
+        let blit_source = BoxRasterChunk::new_fill(colors::blue(), 2, 2);
 
         raster_chunk.blit(&blit_source.as_window(), (7, 7).into());
 
         let mut pixels = vec![colors::red(); 8 * 8];
 
         pixels[7 * 8 + 7] = colors::blue();
-        let expected_raster_chunk = RasterChunk::from_vec(pixels, 8, 8).unwrap();
+        let expected_raster_chunk = BoxRasterChunk::from_vec(pixels, 8, 8).unwrap();
 
         assert_raster_eq!(expected_raster_chunk, raster_chunk);
     }
 
     #[test]
     fn test_noop_blit() {
-        let mut raster_chunk = RasterChunk::new_fill(colors::red(), 8, 8);
+        let mut raster_chunk = BoxRasterChunk::new_fill(colors::red(), 8, 8);
 
-        let expected_raster_chunk = RasterChunk::new_fill(colors::red(), 8, 8);
+        let expected_raster_chunk = BoxRasterChunk::new_fill(colors::red(), 8, 8);
 
-        let blit_source = RasterChunk::new_fill(colors::blue(), 2, 2);
+        let blit_source = BoxRasterChunk::new_fill(colors::blue(), 2, 2);
 
         raster_chunk.blit(&blit_source.as_window(), (-3, -3).into());
         assert_raster_eq!(expected_raster_chunk, raster_chunk);
@@ -242,7 +242,7 @@ mod tests {
 
         pixels[3 * 8 + 4] = colors::blue();
 
-        let raster_chunk = RasterChunk::from_vec(pixels, 8, 8).unwrap();
+        let raster_chunk = BoxRasterChunk::from_vec(pixels, 8, 8).unwrap();
 
         let raster_window: RasterWindow<'_> = raster_chunk.as_window();
 
@@ -269,9 +269,9 @@ mod tests {
 
     #[test]
     fn test_easy_compositing() {
-        let mut raster_chunk = RasterChunk::new_fill(colors::red(), 8, 8);
+        let mut raster_chunk = BoxRasterChunk::new_fill(colors::red(), 8, 8);
 
-        let draw_source = RasterChunk::new_fill(colors::blue(), 8, 8);
+        let draw_source = BoxRasterChunk::new_fill(colors::blue(), 8, 8);
 
         raster_chunk.composite_over(&draw_source.as_window(), (0, 0).into());
 
@@ -284,9 +284,9 @@ mod tests {
 
     #[test]
     fn test_medium_compositing() {
-        let mut raster_chunk = RasterChunk::new_fill(Pixel::new_rgb(128, 128, 128), 8, 8);
+        let mut raster_chunk = BoxRasterChunk::new_fill(Pixel::new_rgb(128, 128, 128), 8, 8);
 
-        let draw_source = RasterChunk::new_fill(Pixel::new_rgba(255, 255, 255, 128), 8, 8);
+        let draw_source = BoxRasterChunk::new_fill(Pixel::new_rgba(255, 255, 255, 128), 8, 8);
 
         raster_chunk.composite_over(&draw_source.as_window(), (0, 0).into());
 
@@ -299,7 +299,7 @@ mod tests {
 
     #[test]
     fn test_dynamic_fill_checkerboard() {
-        let checkerboard_chunk = RasterChunk::new_fill_dynamic(
+        let checkerboard_chunk = BoxRasterChunk::new_fill_dynamic(
             |p| {
                 let mut is_red = true;
                 if p.0 .0 % 2 == 0 {
@@ -334,14 +334,15 @@ mod tests {
         checkerboard_pixels[13] = colors::red();
         checkerboard_pixels[15] = colors::red();
 
-        let expected_checkerboard_chunk = RasterChunk::from_vec(checkerboard_pixels, 4, 4).unwrap();
+        let expected_checkerboard_chunk =
+            BoxRasterChunk::from_vec(checkerboard_pixels, 4, 4).unwrap();
 
         assert_raster_eq!(expected_checkerboard_chunk, checkerboard_chunk);
     }
 
     #[test]
     fn test_dynamic_fill_gradient() {
-        let gradient_chunk = RasterChunk::new_fill_dynamic(
+        let gradient_chunk = BoxRasterChunk::new_fill_dynamic(
             |p| {
                 Pixel::new_rgb_norm(
                     (1.0 + p.0 .1 as f32) / 3.0,
@@ -367,7 +368,7 @@ mod tests {
         gradient_pixels[1] = Pixel::new_rgb_norm(2.0 / 3.0, 0.0, 1.0 / 3.0);
         gradient_pixels[0] = Pixel::new_rgb_norm(1.0 / 3.0, 0.0, 1.0 / 3.0);
 
-        let expected_gradient_chunk = RasterChunk::from_vec(gradient_pixels, 3, 3).unwrap();
+        let expected_gradient_chunk = BoxRasterChunk::from_vec(gradient_pixels, 3, 3).unwrap();
 
         for (pixel, expected_pixel) in gradient_chunk
             .pixels()
@@ -384,7 +385,7 @@ mod tests {
 
         pixels[3 + 2] = colors::blue();
 
-        let raster_chunk = RasterChunk::from_vec(pixels, 3, 4).unwrap();
+        let raster_chunk = BoxRasterChunk::from_vec(pixels, 3, 4).unwrap();
 
         let raster_window = RasterWindow::new(&raster_chunk, (1, 1).into(), 2, 2).unwrap();
 
@@ -393,14 +394,14 @@ mod tests {
         let mut expected_pixels = vec![colors::red(); 2 * 2];
         expected_pixels[1] = colors::blue();
 
-        let expected_chunk = RasterChunk::from_vec(expected_pixels, 2, 2).unwrap();
+        let expected_chunk = BoxRasterChunk::from_vec(expected_pixels, 2, 2).unwrap();
 
         assert_raster_eq!(new_chunk, expected_chunk);
     }
 
     #[test]
     fn test_new_window_edge_cases() {
-        let raster_chunk = RasterChunk::new(10, 10);
+        let raster_chunk = BoxRasterChunk::new(10, 10);
 
         let raster_window_close = RasterWindow::new(&raster_chunk, (1, 1).into(), 9, 9);
 
@@ -417,7 +418,7 @@ mod tests {
 
     #[test]
     fn test_scale_up() {
-        let mut raster_chunk = RasterChunk::new(10, 10);
+        let mut raster_chunk = BoxRasterChunk::new(10, 10);
         raster_chunk.fill_rect(colors::red(), DrawPosition::from((0, 0)), 5, 5);
 
         raster_chunk.nn_scale(Dimensions {
@@ -425,7 +426,7 @@ mod tests {
             height: 20,
         });
 
-        let mut expected = RasterChunk::new(20, 20);
+        let mut expected = BoxRasterChunk::new(20, 20);
         expected.fill_rect(colors::red(), DrawPosition::from((0, 0)), 10, 10);
 
         assert_raster_eq!(raster_chunk, expected);
@@ -433,7 +434,7 @@ mod tests {
 
     #[test]
     fn test_scale_down() {
-        let mut raster_chunk = RasterChunk::new(20, 20);
+        let mut raster_chunk = BoxRasterChunk::new(20, 20);
         raster_chunk.fill_rect(colors::red(), DrawPosition::from((0, 0)), 10, 10);
 
         raster_chunk.nn_scale(Dimensions {
@@ -441,7 +442,7 @@ mod tests {
             height: 10,
         });
 
-        let mut expected = RasterChunk::new(10, 10);
+        let mut expected = BoxRasterChunk::new(10, 10);
         expected.fill_rect(colors::red(), DrawPosition::from((0, 0)), 5, 5);
 
         assert_raster_eq!(raster_chunk, expected);
@@ -449,7 +450,7 @@ mod tests {
 
     #[test]
     fn test_raster_chunk_shift() {
-        let mut raster_a = RasterChunk::new(10, 10);
+        let mut raster_a = BoxRasterChunk::new(10, 10);
         raster_a.fill_rect(colors::red(), DrawPosition((4, 2)), 2, 3);
 
         raster_a.horizontal_shift_left(2);
@@ -458,10 +459,10 @@ mod tests {
             .unwrap()
             .to_chunk();
 
-        let expected_a = RasterChunk::new_fill(colors::red(), 2, 3);
+        let expected_a = BoxRasterChunk::new_fill(colors::red(), 2, 3);
         assert_raster_eq!(shifted_a, expected_a);
 
-        let mut raster_b = RasterChunk::new(10, 10);
+        let mut raster_b = BoxRasterChunk::new(10, 10);
         raster_b.fill_rect(colors::blue(), DrawPosition((3, 4)), 1, 4);
 
         raster_b.horizontal_shift_right(2);
@@ -470,10 +471,10 @@ mod tests {
             .unwrap()
             .to_chunk();
 
-        let expected_b = RasterChunk::new_fill(colors::blue(), 1, 4);
+        let expected_b = BoxRasterChunk::new_fill(colors::blue(), 1, 4);
         assert_raster_eq!(shifted_b, expected_b);
 
-        let mut raster_c = RasterChunk::new(10, 10);
+        let mut raster_c = BoxRasterChunk::new(10, 10);
         raster_c.fill_rect(colors::green(), DrawPosition((1, 2)), 2, 4);
 
         raster_c.vertical_shift_down(3);
@@ -482,10 +483,10 @@ mod tests {
             .unwrap()
             .to_chunk();
 
-        let expected_c = RasterChunk::new_fill(colors::green(), 2, 4);
+        let expected_c = BoxRasterChunk::new_fill(colors::green(), 2, 4);
         assert_raster_eq!(shifted_c, expected_c);
 
-        let mut raster_d = RasterChunk::new(10, 10);
+        let mut raster_d = BoxRasterChunk::new(10, 10);
         raster_d.fill_rect(colors::white(), DrawPosition((6, 8)), 3, 1);
 
         raster_d.vertical_shift_up(3);
@@ -494,7 +495,7 @@ mod tests {
             .unwrap()
             .to_chunk();
 
-        let expected_d = RasterChunk::new_fill(colors::white(), 3, 1);
+        let expected_d = BoxRasterChunk::new_fill(colors::white(), 3, 1);
         assert_raster_eq!(shifted_d, expected_d);
     }
 }

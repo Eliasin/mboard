@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, ops::DerefMut};
 
 use crate::raster::{
     pixels::colors,
@@ -14,20 +14,22 @@ use super::{
     },
 };
 
+pub type BoxRasterChunk = RasterChunk<Box<[Pixel]>>;
+
 /// A square collection of pixels.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RasterChunk {
-    pub(super) pixels: Box<[Pixel]>,
+pub struct RasterChunk<T: DerefMut<Target = [Pixel]>> {
+    pub(super) pixels: T,
     pub(super) dimensions: Dimensions,
 }
 
-impl Display for RasterChunk {
+impl<T: DerefMut<Target = [Pixel]>> Display for RasterChunk<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.as_window().fmt(f)
     }
 }
 
-impl IndexableByPosition for RasterChunk {
+impl<T: DerefMut<Target = [Pixel]>> IndexableByPosition for RasterChunk<T> {
     fn get_index_from_position(&self, position: PixelPosition) -> Option<usize> {
         translate_rect_position_to_flat_index(
             position.0,
@@ -71,70 +73,7 @@ impl IndexableByPosition for RasterChunk {
 }
 
 type RowOperation = fn(&mut [Pixel], &[Pixel]) -> ();
-impl RasterChunk {
-    /// Create a new raster chunk filled in with a pixel value.
-    pub fn new_fill(pixel: Pixel, width: usize, height: usize) -> RasterChunk {
-        let pixels = vec![pixel; width * height];
-
-        RasterChunk {
-            pixels: pixels.into_boxed_slice(),
-            dimensions: Dimensions { width, height },
-        }
-    }
-
-    /// Create a new raster chunk where each pixel value is filled in by a closure given the pixel's location.
-    pub fn new_fill_dynamic(
-        f: fn(PixelPosition) -> Pixel,
-        width: usize,
-        height: usize,
-    ) -> RasterChunk {
-        let mut pixels = vec![colors::transparent(); width * height];
-
-        for row in 0..width {
-            for column in 0..height {
-                pixels[row * width + column] = f(PixelPosition::from((row, column)));
-            }
-        }
-
-        RasterChunk {
-            pixels: pixels.into_boxed_slice(),
-            dimensions: Dimensions { width, height },
-        }
-    }
-
-    /// Create a new raster chunk that is completely transparent.
-    pub fn new(width: usize, height: usize) -> RasterChunk {
-        RasterChunk::new_fill(colors::transparent(), width, height)
-    }
-
-    /// Derive a sub-chunk from a raster chunk. If the sub-chunk positioned at `position` is not fully contained by the source chunk,
-    /// any regions outside the source chunk will be filled in as transparent.
-    pub fn clone_square(
-        &self,
-        position: PixelPosition,
-        width: usize,
-        height: usize,
-    ) -> RasterChunk {
-        let mut rect = Vec::<Pixel>::with_capacity(width * height);
-
-        for row in 0..height {
-            for column in 0..width {
-                let source_position = (column + position.0 .0, row + position.0 .1);
-
-                if let Some(source_index) = self.get_index_from_position(source_position.into()) {
-                    rect.push(self.pixels[source_index]);
-                } else {
-                    rect.push(colors::transparent());
-                }
-            }
-        }
-
-        RasterChunk {
-            pixels: rect.into_boxed_slice(),
-            dimensions: Dimensions { width, height },
-        }
-    }
-
+impl<T: DerefMut<Target = [Pixel]>> RasterChunk<T> {
     /// Takes the whole chunk as a raster window.
     pub fn as_window(&self) -> RasterWindow {
         RasterWindow {
@@ -142,26 +81,6 @@ impl RasterChunk {
             top_left: (0, 0).into(),
             dimensions: self.dimensions,
             backing_dimensions: self.dimensions,
-        }
-    }
-
-    /// Creates a raster chunk from
-    pub fn from_vec(
-        pixels: Vec<Pixel>,
-        width: usize,
-        height: usize,
-    ) -> Result<RasterChunk, InvalidPixelSliceSize> {
-        if width * height != pixels.len() {
-            Err(InvalidPixelSliceSize {
-                desired_height: height,
-                desired_width: width,
-                buffer_size: pixels.len(),
-            })
-        } else {
-            Ok(RasterChunk {
-                pixels: pixels.into_boxed_slice(),
-                dimensions: Dimensions { width, height },
-            })
         }
     }
 
@@ -300,31 +219,6 @@ impl RasterChunk {
         });
     }
 
-    /// Scales the chunk by a factor using the nearest-neighbour algorithm.
-    pub fn nn_scale(&mut self, new_size: Dimensions) {
-        if new_size == self.dimensions {
-            return;
-        }
-
-        let mut new_chunk = RasterChunk::new(new_size.width, new_size.height);
-
-        for column in 0..new_size.width {
-            for row in 0..new_size.height {
-                let nearest = self
-                    .dimensions
-                    .transform_point((column, row).into(), new_size);
-
-                let source_index = self.get_index_from_position(nearest).unwrap();
-                let new_index = new_chunk
-                    .get_index_from_position((column, row).into())
-                    .unwrap();
-                new_chunk.pixels[new_index] = self.pixels[source_index];
-            }
-        }
-
-        *self = new_chunk;
-    }
-
     pub fn pixels(&self) -> &[Pixel] {
         &self.pixels
     }
@@ -399,8 +293,123 @@ impl RasterChunk {
         if shift == 0 {
             return;
         }
+        let len = self.pixels.len();
 
         let shift_start = shift * self.dimensions.width;
-        self.pixels.copy_within(shift_start..self.pixels.len(), 0);
+        self.pixels.copy_within(shift_start..len, 0);
+    }
+}
+
+impl RasterChunk<Box<[Pixel]>> {
+    pub fn into_pixels(self) -> Box<[Pixel]> {
+        self.pixels
+    }
+
+    /// Create a new raster chunk filled in with a pixel value.
+    pub fn new_fill(pixel: Pixel, width: usize, height: usize) -> RasterChunk<Box<[Pixel]>> {
+        let pixels = vec![pixel; width * height];
+
+        RasterChunk {
+            pixels: pixels.into_boxed_slice(),
+            dimensions: Dimensions { width, height },
+        }
+    }
+
+    /// Create a new raster chunk where each pixel value is filled in by a closure given the pixel's location.
+    pub fn new_fill_dynamic(
+        f: fn(PixelPosition) -> Pixel,
+        width: usize,
+        height: usize,
+    ) -> RasterChunk<Box<[Pixel]>> {
+        let mut pixels = vec![colors::transparent(); width * height];
+
+        for row in 0..width {
+            for column in 0..height {
+                pixels[row * width + column] = f(PixelPosition::from((row, column)));
+            }
+        }
+
+        RasterChunk {
+            pixels: pixels.into_boxed_slice(),
+            dimensions: Dimensions { width, height },
+        }
+    }
+
+    /// Create a new raster chunk that is completely transparent.
+    pub fn new(width: usize, height: usize) -> RasterChunk<Box<[Pixel]>> {
+        RasterChunk::new_fill(colors::transparent(), width, height)
+    }
+
+    /// Derive a sub-chunk from a raster chunk. If the sub-chunk positioned at `position` is not fully contained by the source chunk,
+    /// any regions outside the source chunk will be filled in as transparent.
+    pub fn clone_square(
+        &self,
+        position: PixelPosition,
+        width: usize,
+        height: usize,
+    ) -> RasterChunk<Box<[Pixel]>> {
+        let mut rect = Vec::<Pixel>::with_capacity(width * height);
+
+        for row in 0..height {
+            for column in 0..width {
+                let source_position = (column + position.0 .0, row + position.0 .1);
+
+                if let Some(source_index) = self.get_index_from_position(source_position.into()) {
+                    rect.push(self.pixels[source_index]);
+                } else {
+                    rect.push(colors::transparent());
+                }
+            }
+        }
+
+        RasterChunk {
+            pixels: rect.into_boxed_slice(),
+            dimensions: Dimensions { width, height },
+        }
+    }
+
+    /// Creates a raster chunk from
+    pub fn from_vec(
+        pixels: Vec<Pixel>,
+        width: usize,
+        height: usize,
+    ) -> Result<RasterChunk<Box<[Pixel]>>, InvalidPixelSliceSize> {
+        if width * height != pixels.len() {
+            Err(InvalidPixelSliceSize {
+                desired_height: height,
+                desired_width: width,
+                buffer_size: pixels.len(),
+            })
+        } else {
+            Ok(RasterChunk {
+                pixels: pixels.into_boxed_slice(),
+                dimensions: Dimensions { width, height },
+            })
+        }
+    }
+
+    /// Scales the chunk by a factor using the nearest-neighbour algorithm.
+    pub fn nn_scale(&mut self, new_size: Dimensions) {
+        if new_size == self.dimensions {
+            return;
+        }
+
+        let mut new_chunk = RasterChunk::new(new_size.width, new_size.height);
+
+        for column in 0..new_size.width {
+            for row in 0..new_size.height {
+                let nearest = self
+                    .dimensions
+                    .transform_point((column, row).into(), new_size);
+
+                let source_index = self.get_index_from_position(nearest).unwrap();
+                let new_index = new_chunk
+                    .get_index_from_position((column, row).into())
+                    .unwrap();
+                new_chunk.pixels[new_index] = self.pixels[source_index];
+            }
+        }
+
+        *self = new_chunk;
     }
 }
