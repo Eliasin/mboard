@@ -389,12 +389,24 @@ impl Layer for RasterLayer {
         view: &CanvasView,
         bump: &'bump bumpalo::Bump,
     ) -> BumpRasterChunk<'bump> {
-        let mut raster = self.rasterize_canvas_rect(CanvasRect {
-            top_left: view.top_left,
-            dimensions: view.canvas_dimensions,
-        });
-
-        raster.nn_scale_into_bump(view.view_dimensions, bump)
+        if view.canvas_dimensions != view.view_dimensions {
+            let mut raster = self.rasterize_canvas_rect_into_bump(
+                CanvasRect {
+                    top_left: view.top_left,
+                    dimensions: view.canvas_dimensions,
+                },
+                bump,
+            );
+            raster.nn_scale_into_bump(view.view_dimensions, bump)
+        } else {
+            self.rasterize_canvas_rect_into_bump(
+                CanvasRect {
+                    top_left: view.top_left,
+                    dimensions: view.canvas_dimensions,
+                },
+                bump,
+            )
+        }
     }
 
     fn rasterize_canvas_rect_into_bump<'bump>(

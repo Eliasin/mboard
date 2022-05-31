@@ -286,15 +286,24 @@ impl Canvas {
         view: &CanvasView,
         bump: &'bump Bump,
     ) -> BumpRasterChunk<'bump> {
-        let mut raster = self.render_canvas_rect_into_bump(
-            CanvasRect {
-                top_left: view.top_left,
-                dimensions: view.canvas_dimensions,
-            },
-            bump,
-        );
-
-        raster.nn_scale_into_bump(view.view_dimensions, bump)
+        if view.canvas_dimensions != view.view_dimensions {
+            let mut raster = self.render_canvas_rect_into_bump(
+                CanvasRect {
+                    top_left: view.top_left,
+                    dimensions: view.canvas_dimensions,
+                },
+                bump,
+            );
+            raster.nn_scale_into_bump(view.view_dimensions, bump)
+        } else {
+            self.render_canvas_rect_into_bump(
+                CanvasRect {
+                    top_left: view.top_left,
+                    dimensions: view.canvas_dimensions,
+                },
+                bump,
+            )
+        }
     }
 
     fn rasterize_canvas_rect(
