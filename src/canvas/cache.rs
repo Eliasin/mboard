@@ -140,8 +140,9 @@ impl CachedCanvasRaster {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    #[cfg(test)]
+    use super::{CachedCanvasRaster, CanvasRasterizationCache};
     use crate::{
         assert_raster_eq,
         canvas::{CanvasPosition, CanvasRect},
@@ -149,9 +150,6 @@ mod tests {
             chunks::BoxRasterChunk, pixels::colors, position::Dimensions, position::PixelPosition,
         },
     };
-
-    #[cfg(test)]
-    use super::{CachedCanvasRaster, CanvasRasterizationCache};
 
     #[test]
     fn test_canvas_rect_rasterization_cache_caches_renders() {

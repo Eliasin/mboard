@@ -14,26 +14,16 @@ pub use raster_chunk::BoxRasterChunk;
 pub use raster_window::RasterWindow;
 pub use util::IndexableByPosition;
 
+#[cfg(test)]
 mod tests {
-    #[cfg(test)]
-    use crate::assert_raster_eq;
-    #[cfg(test)]
-    use crate::raster::pixels::colors;
-    #[cfg(test)]
-    use crate::raster::position::Dimensions;
-    #[cfg(test)]
-    use crate::raster::position::DrawPosition;
-    #[cfg(test)]
-    use crate::raster::position::PixelPosition;
-    #[cfg(test)]
-    use crate::raster::Pixel;
-
-    #[cfg(test)]
-    use super::raster_chunk::BoxRasterChunk;
-    #[cfg(test)]
-    use super::raster_window::*;
-    #[cfg(test)]
-    use super::util::*;
+    use super::{raster_chunk::BoxRasterChunk, raster_window::*, util::*};
+    use crate::{
+        assert_raster_eq,
+        raster::{
+            pixels::{colors, Pixel},
+            position::{Dimensions, DrawPosition, PixelPosition},
+        },
+    };
 
     #[test]
     fn test_position_translation() {

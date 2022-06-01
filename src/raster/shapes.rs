@@ -234,12 +234,10 @@ impl Polygon for Circle {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    #[cfg(test)]
-    use crate::raster::chunks::IndexableByPosition;
-
-    #[cfg(test)]
     use super::*;
+    use crate::raster::chunks::IndexableByPosition;
 
     #[test]
     fn test_circle_rasterization() {

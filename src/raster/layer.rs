@@ -450,14 +450,10 @@ impl Layer for RasterLayer {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    #[cfg(test)]
-    use crate::assert_raster_eq;
-    #[cfg(test)]
-    use crate::raster::pixels::colors;
-
-    #[cfg(test)]
     use super::*;
+    use crate::{assert_raster_eq, raster::pixels::colors};
 
     #[test]
     fn test_chunk_visibility_easy() {

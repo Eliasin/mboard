@@ -381,12 +381,10 @@ impl Canvas {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    #[cfg(test)]
-    use crate::raster::{chunks::IndexableByPosition, Pixel, RasterLayerAction};
-
-    #[cfg(test)]
     use super::*;
+    use crate::raster::{chunks::IndexableByPosition, Pixel, RasterLayerAction};
 
     #[test]
     fn test_transform_view_to_canvas() {
