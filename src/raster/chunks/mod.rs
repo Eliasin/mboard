@@ -6,12 +6,14 @@
 //! `RasterWindow` is a borrow of some raster data, this can be a full
 //! chunk or part of a `Pixel` slice.
 
+pub mod nn_map;
 pub mod raster_chunk;
 pub mod raster_window;
 mod util;
 
 pub use raster_chunk::BoxRasterChunk;
 pub use raster_window::RasterWindow;
+pub use util::translate_rect_position_to_flat_index;
 pub use util::IndexableByPosition;
 
 #[cfg(test)]

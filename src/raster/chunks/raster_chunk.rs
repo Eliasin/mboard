@@ -9,6 +9,7 @@ use crate::raster::{
 };
 
 use super::{
+    nn_map::{InvalidScaleError, NearestNeighbourMap},
     raster_window::RasterWindow,
     util::{
         translate_rect_position_to_flat_index, BoundedIndex, IndexableByPosition,
@@ -391,7 +392,7 @@ impl BoxRasterChunk {
         }
     }
 
-    /// Scales the chunk by a factor using the nearest-neighbour algorithm.
+    /// Scales the chunk by to a new size using the nearest-neighbour algorithm.
     pub fn nn_scale(&mut self, new_size: Dimensions) {
         if new_size == self.dimensions {
             return;
@@ -399,8 +400,8 @@ impl BoxRasterChunk {
 
         let mut new_chunk = BoxRasterChunk::new(new_size.width, new_size.height);
 
-        for column in 0..new_size.width {
-            for row in 0..new_size.height {
+        for row in 0..new_size.height {
+            for column in 0..new_size.width {
                 let nearest = self
                     .dimensions
                     .transform_point((column, row).into(), new_size);
@@ -414,6 +415,22 @@ impl BoxRasterChunk {
         }
 
         *self = new_chunk;
+    }
+
+    /// Scales the chunk to a new size with a precalculated nearest-neighbour mapped.
+    pub fn nn_scale_with_map(
+        &mut self,
+        nn_map: &NearestNeighbourMap,
+    ) -> Result<(), InvalidScaleError> {
+        let destination_dimensions = nn_map.destination_dimensions();
+        let mut new_chunk =
+            BoxRasterChunk::new(destination_dimensions.width, destination_dimensions.height);
+
+        nn_map.scale_using_map(self, &mut new_chunk)?;
+
+        *self = new_chunk;
+
+        Ok(())
     }
 
     /// Scales the chunk by a factor using the nearest-neighbour algorithm and
