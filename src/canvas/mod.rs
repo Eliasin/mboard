@@ -1,5 +1,5 @@
 use crate::raster::{
-    chunks::{raster_chunk::BumpRasterChunk, BoxRasterChunk},
+    chunks::{nn_map::NearestNeighbourMap, raster_chunk::BumpRasterChunk, BoxRasterChunk},
     layer::ChunkPosition,
     pixels::colors,
     position::{Dimensions, PixelPosition, Scale},
@@ -11,9 +11,9 @@ use enum_dispatch::enum_dispatch;
 mod cache;
 pub use cache::ShapeCache;
 
-use self::cache::CanvasRasterizationCache;
+use self::cache::{CanvasRasterizationCache, NearestNeighbourMapCache};
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct CanvasPosition(pub (i64, i64));
 
 impl CanvasPosition {
@@ -55,7 +55,7 @@ impl CanvasPosition {
 
 /// A view positioned relative to a set of layers.
 /// The view has a scale and a width and height, the width and height are in pixel units.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct CanvasView {
     pub top_left: CanvasPosition,
     pub view_dimensions: Dimensions,
@@ -126,6 +126,12 @@ impl CanvasView {
                 self.canvas_dimensions,
             ))
         }
+    }
+
+    /// Create a `NearestNeighbourMap` for the transformation from the canvas
+    /// dimensions to the view dimensions of this `CanvasView`.
+    pub fn create_nn_map_to_view_dimensions(&self) -> NearestNeighbourMap {
+        NearestNeighbourMap::new(self.canvas_dimensions, self.view_dimensions)
     }
 }
 
@@ -267,6 +273,7 @@ pub struct Canvas {
     layers: Vec<LayerImplementation>,
     shape_cache: ShapeCache,
     rasterization_cache: CanvasRasterizationCache,
+    nn_map_cache: NearestNeighbourMapCache,
 }
 
 impl Canvas {
@@ -276,7 +283,13 @@ impl Canvas {
             dimensions: view.canvas_dimensions,
         });
 
-        raster.nn_scale(view.view_dimensions);
+        let nn_map = self.nn_map_cache.get_nn_map_for_view(view);
+
+        raster.nn_scale_with_map(nn_map).expect(
+            "raster should always be correct \
+                     size for view based nn_map, \
+                     as the raster size is derived from the view",
+        );
 
         raster
     }
@@ -294,7 +307,14 @@ impl Canvas {
                 },
                 bump,
             );
-            raster.nn_scale_into_bump(view.view_dimensions, bump)
+
+            let nn_map = self.nn_map_cache.get_nn_map_for_view(view);
+
+            raster.nn_scale_with_map_into_bump(nn_map, bump).expect(
+                "raster should always be correct \
+                     size for view based nn_map, \
+                     as the raster size is derived from the view",
+            )
         } else {
             self.render_canvas_rect_into_bump(
                 CanvasRect {

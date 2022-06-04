@@ -1,12 +1,12 @@
 use lru::LruCache;
 
 use crate::raster::{
-    chunks::{BoxRasterChunk, RasterWindow},
-    position::DrawPosition,
+    chunks::{nn_map::NearestNeighbourMap, BoxRasterChunk, RasterWindow},
+    position::{Dimensions, DrawPosition},
     shapes::{Oval, RasterPolygon},
 };
 
-use super::{CanvasPosition, CanvasRect};
+use super::{CanvasPosition, CanvasRect, CanvasView};
 
 pub struct ShapeCache {
     oval_cache: LruCache<Oval, BoxRasterChunk>,
@@ -22,7 +22,7 @@ impl ShapeCache {
     pub fn get_oval(&mut self, oval: Oval) -> &BoxRasterChunk {
         self.oval_cache
             .get_or_insert(oval, || oval.rasterize())
-            .unwrap()
+            .expect("this should never happen, as it only occurs with cache size 0")
     }
 }
 
@@ -137,6 +137,39 @@ impl CachedCanvasRaster {
 
     pub fn has_rect_cached(&self, canvas_rect: &CanvasRect) -> bool {
         self.get_window(canvas_rect).is_some()
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+struct ViewDimensions {
+    canvas_dimensions: Dimensions,
+    view_dimensions: Dimensions,
+}
+
+impl ViewDimensions {
+    pub fn from_view(view: &CanvasView) -> ViewDimensions {
+        ViewDimensions {
+            canvas_dimensions: view.canvas_dimensions,
+            view_dimensions: view.view_dimensions,
+        }
+    }
+}
+
+pub struct NearestNeighbourMapCache(LruCache<ViewDimensions, NearestNeighbourMap>);
+
+impl NearestNeighbourMapCache {
+    pub fn get_nn_map_for_view(&mut self, view: &CanvasView) -> &NearestNeighbourMap {
+        self.0
+            .get_or_insert(ViewDimensions::from_view(view), || {
+                view.create_nn_map_to_view_dimensions()
+            })
+            .expect("this should never happen, as it only occurs with cache size 0")
+    }
+}
+
+impl Default for NearestNeighbourMapCache {
+    fn default() -> Self {
+        NearestNeighbourMapCache(LruCache::new(128))
     }
 }
 

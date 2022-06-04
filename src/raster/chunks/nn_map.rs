@@ -1,9 +1,14 @@
-use std::ops::DerefMut;
+use bumpalo::Bump;
+use std::{mem::MaybeUninit, ops::DerefMut};
 use thiserror::Error;
 
 use crate::raster::{position::Dimensions, Pixel};
 
-use super::{raster_chunk::RasterChunk, translate_rect_position_to_flat_index};
+use super::{
+    raster_chunk::{BumpRasterChunk, RasterChunk},
+    translate_rect_position_to_flat_index,
+    util::InvalidPixelSliceSize,
+};
 
 #[derive(Error, Debug)]
 pub enum InvalidScaleError {
@@ -82,10 +87,6 @@ impl NearestNeighbourMap {
             });
         }
 
-        if source_chunk.dimensions() == destination_chunk.dimensions() {
-            return Ok(());
-        }
-
         for row in 0..self.destination_dimensions.height {
             for column in 0..self.destination_dimensions.width {
                 let destination_index = translate_rect_position_to_flat_index(
@@ -100,6 +101,45 @@ impl NearestNeighbourMap {
         }
 
         Ok(())
+    }
+
+    pub fn scale_using_map_into_bump<'bump, S: DerefMut<Target = [Pixel]>>(
+        &self,
+        source_chunk: &RasterChunk<S>,
+        bump: &'bump Bump,
+    ) -> Result<BumpRasterChunk<'bump>, InvalidScaleError> {
+        if source_chunk.dimensions() != self.source_dimensions {
+            return Err(InvalidScaleError::InvalidSourceDimensions {
+                dimensions_given: source_chunk.dimensions(),
+                expected: self.source_dimensions,
+            });
+        }
+
+        let chunk_pixels: &'bump mut [MaybeUninit<Pixel>] = bump.alloc_slice_fill_copy(
+            self.destination_dimensions.width * self.destination_dimensions.height,
+            MaybeUninit::uninit(),
+        );
+
+        for row in 0..self.destination_dimensions.height {
+            for column in 0..self.destination_dimensions.width {
+                let destination_index = translate_rect_position_to_flat_index(
+                    (column, row),
+                    self.destination_dimensions.width,
+                    self.destination_dimensions.height,
+                )
+                .unwrap();
+                let source_index = self.map[destination_index];
+
+                chunk_pixels[destination_index].write(source_chunk.pixels[source_index]);
+            }
+        }
+        let chunk_pixels =
+            unsafe { std::mem::transmute::<_, bumpalo::boxed::Box<'bump, [Pixel]>>(chunk_pixels) };
+
+        Ok(BumpRasterChunk {
+            pixels: chunk_pixels,
+            dimensions: self.destination_dimensions,
+        })
     }
 
     pub fn destination_dimensions(&self) -> Dimensions {

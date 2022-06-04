@@ -422,6 +422,10 @@ impl BoxRasterChunk {
         &mut self,
         nn_map: &NearestNeighbourMap,
     ) -> Result<(), InvalidScaleError> {
+        if nn_map.destination_dimensions() == self.dimensions {
+            return Ok(());
+        }
+
         let destination_dimensions = nn_map.destination_dimensions();
         let mut new_chunk =
             BoxRasterChunk::new(destination_dimensions.width, destination_dimensions.height);
@@ -458,6 +462,16 @@ impl BoxRasterChunk {
 
         new_chunk
     }
+
+    /// Scales the chunk to a new size with a precalculated nearest-neighbour mapped
+    /// and place the result into a bump.
+    pub fn nn_scale_with_map_into_bump<'bump>(
+        &mut self,
+        nn_map: &NearestNeighbourMap,
+        bump: &'bump Bump,
+    ) -> Result<BumpRasterChunk<'bump>, InvalidScaleError> {
+        nn_map.scale_using_map_into_bump(self, bump)
+    }
 }
 
 impl<'bump> BumpRasterChunk<'bump> {
@@ -466,12 +480,12 @@ impl<'bump> BumpRasterChunk<'bump> {
     }
 
     /// Create a new raster chunk filled in with a pixel value.
-    pub fn new_fill(
+    pub fn new_fill<'other_bump>(
         pixel: Pixel,
         width: usize,
         height: usize,
-        bump: &'bump Bump,
-    ) -> BumpRasterChunk {
+        bump: &'other_bump Bump,
+    ) -> BumpRasterChunk<'other_bump> {
         let pixels = bumpalo::vec![in bump; pixel; width * height];
 
         BumpRasterChunk {
@@ -481,12 +495,12 @@ impl<'bump> BumpRasterChunk<'bump> {
     }
 
     /// Create a new raster chunk where each pixel value is filled in by a closure given the pixel's location.
-    pub fn new_fill_dynamic(
+    pub fn new_fill_dynamic<'other_bump>(
         f: fn(PixelPosition) -> Pixel,
         width: usize,
         height: usize,
-        bump: &'bump Bump,
-    ) -> BumpRasterChunk {
+        bump: &'other_bump Bump,
+    ) -> BumpRasterChunk<'other_bump> {
         let mut pixels = bumpalo::vec![in bump; colors::transparent(); width * height];
 
         for row in 0..width {
@@ -502,17 +516,21 @@ impl<'bump> BumpRasterChunk<'bump> {
     }
 
     /// Create a new raster chunk that is completely transparent.
-    pub fn new(width: usize, height: usize, bump: &'bump Bump) -> BumpRasterChunk {
+    pub fn new<'other_bump>(
+        width: usize,
+        height: usize,
+        bump: &'other_bump Bump,
+    ) -> BumpRasterChunk<'other_bump> {
         BumpRasterChunk::new_fill(colors::transparent(), width, height, bump)
     }
 
     /// Scales the chunk by a factor using the nearest-neighbour algorithm and
     /// place the result into a bump.
-    pub fn nn_scale_into_bump(
+    pub fn nn_scale_into_bump<'other_bump>(
         &mut self,
         new_size: Dimensions,
-        bump: &'bump Bump,
-    ) -> BumpRasterChunk<'bump> {
+        bump: &'other_bump Bump,
+    ) -> BumpRasterChunk<'other_bump> {
         let mut new_chunk = BumpRasterChunk::new(new_size.width, new_size.height, bump);
 
         for column in 0..new_size.width {
@@ -530,5 +548,15 @@ impl<'bump> BumpRasterChunk<'bump> {
         }
 
         new_chunk
+    }
+
+    /// Scales the chunk to a new size with a precalculated nearest-neighbour mapped
+    /// and place the result into a bump.
+    pub fn nn_scale_with_map_into_bump<'other_bump>(
+        &mut self,
+        nn_map: &NearestNeighbourMap,
+        bump: &'other_bump Bump,
+    ) -> Result<BumpRasterChunk<'other_bump>, InvalidScaleError> {
+        nn_map.scale_using_map_into_bump(self, bump)
     }
 }

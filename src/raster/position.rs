@@ -50,7 +50,7 @@ impl Scale {
 }
 
 /// The dimensions of a 2d object.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Dimensions {
     pub width: usize,
     pub height: usize,
