@@ -6,7 +6,7 @@ use super::{
 };
 use crate::{
     canvas::{CanvasPosition, CanvasRect, CanvasView, Layer, ShapeCache},
-    raster::shapes::{Oval, RasterPolygon},
+    vector::shapes::{Oval, RasterPolygon},
 };
 use std::{collections::HashMap, convert::TryInto};
 

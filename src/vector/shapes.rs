@@ -1,6 +1,6 @@
 use std::ops::Mul;
 
-use super::{
+use crate::raster::{
     chunks::{BoxRasterChunk, RasterWindow},
     pixels::colors,
     position::PixelPosition,

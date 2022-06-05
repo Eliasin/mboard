@@ -5,7 +5,6 @@ pub mod iter;
 pub mod layer;
 pub mod pixels;
 pub mod position;
-pub mod shapes;
 
 pub use layer::{RasterLayer, RasterLayerAction};
 pub use pixels::Pixel;

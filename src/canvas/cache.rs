@@ -1,9 +1,11 @@
 use lru::LruCache;
 
-use crate::raster::{
-    chunks::{nn_map::NearestNeighbourMap, BoxRasterChunk, RasterWindow},
-    position::{Dimensions, DrawPosition},
-    shapes::{Oval, RasterPolygon},
+use crate::{
+    raster::{
+        chunks::{nn_map::NearestNeighbourMap, BoxRasterChunk, RasterWindow},
+        position::{Dimensions, DrawPosition},
+    },
+    vector::shapes::{Oval, RasterPolygon},
 };
 
 use super::{CanvasPosition, CanvasRect, CanvasView};
