@@ -23,7 +23,7 @@ pub trait Polygon {
 }
 
 /// A way to rasterize a polygon.
-pub trait RasterPolygon {
+pub trait RasterizablePolygon {
     /// Rasterization of the polygon as a raster chunk.
     fn rasterize(&self) -> BoxRasterChunk;
 }
@@ -34,7 +34,7 @@ fn greyscale_from_proportion_inside(proportion_inside: u8) -> Pixel {
     Pixel::new_rgba(u, u, u, proportion_inside)
 }
 
-impl<T: Polygon> RasterPolygon for T {
+impl<T: Polygon> RasterizablePolygon for T {
     fn rasterize(&self) -> BoxRasterChunk {
         let bounding_box = self.bounding_box();
 

@@ -5,7 +5,7 @@ use crate::{
         chunks::{nn_map::NearestNeighbourMap, BoxRasterChunk, RasterWindow},
         position::{Dimensions, DrawPosition},
     },
-    vector::shapes::{Oval, RasterPolygon},
+    vector::shapes::{Oval, RasterizablePolygon},
 };
 
 use super::{CanvasPosition, CanvasRect, CanvasView};
