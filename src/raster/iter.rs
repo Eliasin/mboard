@@ -1,9 +1,44 @@
 use super::{
     chunks::BoxRasterChunk,
     layer::{ChunkPosition, ChunkRect, ChunkRectPosition},
+    position::{Dimensions, PixelPosition},
     RasterLayer,
 };
 use std::collections::HashMap;
+
+/// Iterator over individual `PixelPosition`s in a dimension space.
+pub struct PixelPositionIterator {
+    dimensions: Dimensions,
+    current: PixelPosition,
+}
+
+impl PixelPositionIterator {
+    pub fn new(dimensions: Dimensions) -> PixelPositionIterator {
+        PixelPositionIterator {
+            dimensions,
+            current: PixelPosition((0, 0)),
+        }
+    }
+}
+
+impl Iterator for PixelPositionIterator {
+    type Item = PixelPosition;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current.0 .0 >= self.dimensions.width {
+            self.current.0 .0 = 0;
+            self.current.0 .1 += 1;
+        }
+
+        if self.current.0 .1 >= self.dimensions.height {
+            None
+        } else {
+            Some(self.current)
+        }
+    }
+}
+
+impl ExactSizeIterator for PixelPositionIterator {}
 
 pub type RasterChunkIterator<'a> = GenericRasterChunkIterator<&'a RasterLayer>;
 pub type RasterChunkIteratorMut<'a> = GenericRasterChunkIterator<&'a mut RasterLayer>;

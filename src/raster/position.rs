@@ -6,6 +6,8 @@
 
 use std::{convert::TryInto, ops::Add};
 
+use super::iter::PixelPositionIterator;
+
 /// A position within a 2d collection of pixels.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct PixelPosition(pub (usize, usize));
@@ -90,6 +92,11 @@ impl Dimensions {
     /// The largest of `width` and `height`.
     pub fn largest_dimension(&self) -> usize {
         usize::max(self.width, self.height)
+    }
+
+    /// Iterator over pixel positions in rect described by dimensions.
+    pub fn iter_pixels(&self) -> PixelPositionIterator {
+        PixelPositionIterator::new(*self)
     }
 }
 

@@ -7,7 +7,6 @@ use crate::raster::{position::Dimensions, Pixel};
 use super::{
     raster_chunk::{BumpRasterChunk, RasterChunk},
     translate_rect_position_to_flat_index,
-    util::InvalidPixelSliceSize,
 };
 
 #[derive(Error, Debug)]

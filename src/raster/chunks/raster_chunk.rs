@@ -446,18 +446,16 @@ impl BoxRasterChunk {
     ) -> BumpRasterChunk<'bump> {
         let mut new_chunk = BumpRasterChunk::new(new_size.width, new_size.height, bump);
 
-        for column in 0..new_size.width {
-            for row in 0..new_size.height {
-                let nearest = self
-                    .dimensions
-                    .transform_point((column, row).into(), new_size);
+        for PixelPosition((column, row)) in new_size.iter_pixels() {
+            let nearest = self
+                .dimensions
+                .transform_point((column, row).into(), new_size);
 
-                let source_index = self.get_index_from_position(nearest).unwrap();
-                let new_index = new_chunk
-                    .get_index_from_position((column, row).into())
-                    .unwrap();
-                new_chunk.pixels[new_index] = self.pixels[source_index];
-            }
+            let source_index = self.get_index_from_position(nearest).unwrap();
+            let new_index = new_chunk
+                .get_index_from_position((column, row).into())
+                .unwrap();
+            new_chunk.pixels[new_index] = self.pixels[source_index];
         }
 
         new_chunk
@@ -501,18 +499,10 @@ impl<'bump> BumpRasterChunk<'bump> {
         height: usize,
         bump: &'other_bump Bump,
     ) -> BumpRasterChunk<'other_bump> {
-        let mut pixels = bumpalo::vec![in bump; colors::transparent(); width * height];
+        let dimensions = Dimensions { width, height };
+        let pixels = bumpalo::boxed::Box::from_iter_in(dimensions.iter_pixels().map(f), bump);
 
-        for row in 0..width {
-            for column in 0..height {
-                pixels[row * width + column] = f(PixelPosition::from((row, column)));
-            }
-        }
-
-        BumpRasterChunk {
-            pixels: pixels.into_boxed_slice(),
-            dimensions: Dimensions { width, height },
-        }
+        BumpRasterChunk { pixels, dimensions }
     }
 
     /// Create a new raster chunk that is completely transparent.
@@ -533,18 +523,16 @@ impl<'bump> BumpRasterChunk<'bump> {
     ) -> BumpRasterChunk<'other_bump> {
         let mut new_chunk = BumpRasterChunk::new(new_size.width, new_size.height, bump);
 
-        for column in 0..new_size.width {
-            for row in 0..new_size.height {
-                let nearest = self
-                    .dimensions
-                    .transform_point((column, row).into(), new_size);
+        for PixelPosition((column, row)) in new_size.iter_pixels() {
+            let nearest = self
+                .dimensions
+                .transform_point((column, row).into(), new_size);
 
-                let source_index = self.get_index_from_position(nearest).unwrap();
-                let new_index = new_chunk
-                    .get_index_from_position((column, row).into())
-                    .unwrap();
-                new_chunk.pixels[new_index] = self.pixels[source_index];
-            }
+            let source_index = self.get_index_from_position(nearest).unwrap();
+            let new_index = new_chunk
+                .get_index_from_position((column, row).into())
+                .unwrap();
+            new_chunk.pixels[new_index] = self.pixels[source_index];
         }
 
         new_chunk
