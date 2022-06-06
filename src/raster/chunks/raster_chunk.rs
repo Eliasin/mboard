@@ -1,4 +1,8 @@
-use std::{fmt::Display, ops::DerefMut};
+use std::{
+    fmt::Display,
+    ops::{Deref, DerefMut},
+    rc::Rc,
+};
 
 use bumpalo::Bump;
 
@@ -22,18 +26,18 @@ pub type BumpRasterChunk<'bump> = RasterChunk<bumpalo::boxed::Box<'bump, [Pixel]
 
 /// A square collection of pixels.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RasterChunk<T: DerefMut<Target = [Pixel]>> {
+pub struct RasterChunk<T: Deref<Target = [Pixel]>> {
     pub(super) pixels: T,
     pub(super) dimensions: Dimensions,
 }
 
-impl<T: DerefMut<Target = [Pixel]>> Display for RasterChunk<T> {
+impl<T: Deref<Target = [Pixel]>> Display for RasterChunk<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.as_window().fmt(f)
     }
 }
 
-impl<T: DerefMut<Target = [Pixel]>> IndexableByPosition for RasterChunk<T> {
+impl<T: Deref<Target = [Pixel]>> IndexableByPosition for RasterChunk<T> {
     fn get_index_from_position(&self, position: PixelPosition) -> Option<usize> {
         translate_rect_position_to_flat_index(
             position.0,
@@ -77,7 +81,8 @@ impl<T: DerefMut<Target = [Pixel]>> IndexableByPosition for RasterChunk<T> {
 }
 
 type RowOperation = fn(&mut [Pixel], &[Pixel]) -> ();
-impl<T: DerefMut<Target = [Pixel]>> RasterChunk<T> {
+
+impl<T: Deref<Target = [Pixel]>> RasterChunk<T> {
     /// Takes the whole chunk as a raster window.
     pub fn as_window(&self) -> RasterWindow {
         RasterWindow {
@@ -125,7 +130,16 @@ impl<T: DerefMut<Target = [Pixel]>> RasterChunk<T> {
 
         source.shrink(shrink_top, shrink_bottom, shrink_left, shrink_right)
     }
+    pub fn pixels(&self) -> &[Pixel] {
+        &self.pixels
+    }
 
+    pub fn dimensions(&self) -> Dimensions {
+        self.dimensions
+    }
+}
+
+impl<T: DerefMut<Target = [Pixel]>> RasterChunk<T> {
     /// Performs an operation on the raster chunk row-wise.
     fn perform_row_operation<F>(
         &mut self,
@@ -221,14 +235,6 @@ impl<T: DerefMut<Target = [Pixel]>> RasterChunk<T> {
                 pixel_d.composite_over(pixel_s);
             }
         });
-    }
-
-    pub fn pixels(&self) -> &[Pixel] {
-        &self.pixels
-    }
-
-    pub fn dimensions(&self) -> Dimensions {
-        self.dimensions
     }
 
     /// Shift the pixels in a raster chunk horizontally to the left. Pixels
