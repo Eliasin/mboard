@@ -11,7 +11,7 @@ use enum_dispatch::enum_dispatch;
 mod cache;
 pub use cache::ShapeCache;
 
-use self::cache::{CanvasRasterizationCache, NearestNeighbourMapCache};
+use self::cache::{CanvasRectRasterCache, NearestNeighbourMapCache};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct CanvasPosition(pub (i64, i64));
@@ -272,7 +272,7 @@ pub trait Layer {
 pub struct Canvas {
     layers: Vec<LayerImplementation>,
     shape_cache: ShapeCache,
-    rasterization_cache: CanvasRasterizationCache,
+    rasterization_cache: CanvasRectRasterCache,
     nn_map_cache: NearestNeighbourMapCache,
 }
 
@@ -285,7 +285,7 @@ impl Canvas {
 
         let nn_map = self.nn_map_cache.get_nn_map_for_view(view);
 
-        raster.nn_scale_with_map(nn_map).expect(
+        raster.nn_scaled_with_map(nn_map).expect(
             "raster should always be correct \
                      size for view based nn_map, \
                      as the raster size is derived from the view",

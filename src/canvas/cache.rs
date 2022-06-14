@@ -2,7 +2,10 @@ use lru::LruCache;
 
 use crate::{
     raster::{
-        chunks::{nn_map::NearestNeighbourMap, BoxRasterChunk, RasterWindow},
+        chunks::{
+            nn_map::{InvalidScaleError, NearestNeighbourMap},
+            BoxRasterChunk, RasterWindow,
+        },
         position::{Dimensions, DrawPosition},
     },
     vector::shapes::{Oval, RasterizablePolygon},
@@ -35,9 +38,38 @@ impl Default for ShapeCache {
 }
 
 #[derive(Default)]
-pub struct CanvasRasterizationCache(Option<CachedCanvasRaster>);
+pub struct CanvasViewRasterCache {
+    cached_raster: Option<CachedScaledCanvasRaster>,
+    nn_map_cache: NearestNeighbourMapCache,
+}
 
-impl CanvasRasterizationCache {
+struct CachedScaledCanvasRaster {
+    cached_chunk_position: CanvasPosition,
+    view_dimensions: Dimensions,
+    cached_chunk: BoxRasterChunk,
+}
+
+impl CachedScaledCanvasRaster {
+    fn try_new_cached_from_scaling_canvas_raster(
+        cached_canvas_raster: CachedCanvasRaster,
+        nn_map: NearestNeighbourMap,
+    ) -> Result<CachedScaledCanvasRaster, InvalidScaleError> {
+        let scaled = cached_canvas_raster
+            .cached_chunk
+            .nn_scaled_with_map(&nn_map)?;
+
+        Ok(CachedScaledCanvasRaster {
+            cached_chunk_position: cached_canvas_raster.cached_chunk_position,
+            view_dimensions: nn_map.destination_dimensions(),
+            cached_chunk: cached_canvas_raster.cached_chunk,
+        })
+    }
+}
+
+#[derive(Default)]
+pub struct CanvasRectRasterCache(Option<CachedCanvasRaster>);
+
+impl CanvasRectRasterCache {
     pub fn rerender_canvas_rect<R>(&mut self, canvas_rect: &CanvasRect, rasterizer: &mut R)
     where
         R: FnMut(&CanvasRect) -> BoxRasterChunk,
@@ -102,11 +134,7 @@ impl CanvasRasterizationCache {
             }
         });
 
-        CanvasRasterizationCache::get_chunk_from_cache(
-            cached_canvas_raster,
-            canvas_rect,
-            rasterizer,
-        )
+        CanvasRectRasterCache::get_chunk_from_cache(cached_canvas_raster, canvas_rect, rasterizer)
     }
 }
 
@@ -177,7 +205,7 @@ impl Default for NearestNeighbourMapCache {
 
 #[cfg(test)]
 mod tests {
-    use super::{CachedCanvasRaster, CanvasRasterizationCache};
+    use super::{CachedCanvasRaster, CanvasRectRasterCache};
     use crate::{
         assert_raster_eq,
         canvas::{CanvasPosition, CanvasRect},
@@ -188,7 +216,7 @@ mod tests {
 
     #[test]
     fn test_canvas_rect_rasterization_cache_caches_renders() {
-        let mut cache = CanvasRasterizationCache::default();
+        let mut cache = CanvasRectRasterCache::default();
 
         let render_chunk = BoxRasterChunk::new_fill(colors::green(), 512, 512);
 
@@ -229,7 +257,7 @@ mod tests {
         let render_chunk = BoxRasterChunk::new_fill(colors::green(), 64, 64);
         let cached_chunk = BoxRasterChunk::new_fill(colors::red(), 64, 64);
 
-        let mut cache = CanvasRasterizationCache(Some(CachedCanvasRaster {
+        let mut cache = CanvasRectRasterCache(Some(CachedCanvasRaster {
             cached_chunk_position: CanvasPosition((0, 0)),
             cached_chunk: cached_chunk.clone(),
         }));

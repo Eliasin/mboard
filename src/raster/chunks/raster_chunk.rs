@@ -22,6 +22,7 @@ use super::{
 };
 
 pub type BoxRasterChunk = RasterChunk<Box<[Pixel]>>;
+pub type RcRasterChunk = RasterChunk<Rc<[Pixel]>>;
 pub type BumpRasterChunk<'bump> = RasterChunk<bumpalo::boxed::Box<'bump, [Pixel]>>;
 
 /// A square collection of pixels.
@@ -423,6 +424,27 @@ impl BoxRasterChunk {
         *self = new_chunk;
     }
 
+    /// A chunk scaled to a new size using the nearest-neighbour algorithm.
+    pub fn nn_scaled(&mut self, new_size: Dimensions) -> BoxRasterChunk {
+        let mut new_chunk = BoxRasterChunk::new(new_size.width, new_size.height);
+
+        for row in 0..new_size.height {
+            for column in 0..new_size.width {
+                let nearest = self
+                    .dimensions
+                    .transform_point((column, row).into(), new_size);
+
+                let source_index = self.get_index_from_position(nearest).unwrap();
+                let new_index = new_chunk
+                    .get_index_from_position((column, row).into())
+                    .unwrap();
+                new_chunk.pixels[new_index] = self.pixels[source_index];
+            }
+        }
+
+        new_chunk
+    }
+
     /// Scales the chunk to a new size with a precalculated nearest-neighbour mapped.
     pub fn nn_scale_with_map(
         &mut self,
@@ -441,6 +463,20 @@ impl BoxRasterChunk {
         *self = new_chunk;
 
         Ok(())
+    }
+
+    /// A scaled chunk of a new size with a precalculated nearest-neighbour mapped.
+    pub fn nn_scaled_with_map(
+        &self,
+        nn_map: &NearestNeighbourMap,
+    ) -> Result<BoxRasterChunk, InvalidScaleError> {
+        let destination_dimensions = nn_map.destination_dimensions();
+        let mut new_chunk =
+            BoxRasterChunk::new(destination_dimensions.width, destination_dimensions.height);
+
+        nn_map.scale_using_map(self, &mut new_chunk)?;
+
+        Ok(new_chunk)
     }
 
     /// Scales the chunk by a factor using the nearest-neighbour algorithm and
@@ -552,5 +588,79 @@ impl<'bump> BumpRasterChunk<'bump> {
         bump: &'other_bump Bump,
     ) -> Result<BumpRasterChunk<'other_bump>, InvalidScaleError> {
         nn_map.scale_using_map_into_bump(self, bump)
+    }
+}
+
+impl RcRasterChunk {
+    /// Create a new raster chunk filled in with a pixel value.
+    pub fn new_fill(pixel: Pixel, width: usize, height: usize) -> RcRasterChunk {
+        let pixels = vec![pixel; width * height];
+
+        RasterChunk {
+            pixels: Rc::from(pixels.into_boxed_slice()),
+            dimensions: Dimensions { width, height },
+        }
+    }
+
+    /// Create a new raster chunk where each pixel value is filled in by a closure given the pixel's location.
+    pub fn new_fill_dynamic(
+        f: fn(PixelPosition) -> Pixel,
+        width: usize,
+        height: usize,
+    ) -> RcRasterChunk {
+        let mut pixels = vec![colors::transparent(); width * height];
+
+        for row in 0..width {
+            for column in 0..height {
+                pixels[row * width + column] = f(PixelPosition::from((row, column)));
+            }
+        }
+
+        RasterChunk {
+            pixels: Rc::from(pixels.into_boxed_slice()),
+            dimensions: Dimensions { width, height },
+        }
+    }
+
+    /// Create a new raster chunk that is completely transparent.
+    pub fn new(width: usize, height: usize) -> RcRasterChunk {
+        RcRasterChunk::new_fill(colors::transparent(), width, height)
+    }
+
+    /// Derive a sub-chunk from a raster chunk. If the sub-chunk positioned at `position` is not fully contained by the source chunk,
+    /// any regions outside the source chunk will be filled in as transparent.
+    pub fn clone_square(
+        &self,
+        position: PixelPosition,
+        width: usize,
+        height: usize,
+    ) -> RcRasterChunk {
+        let mut rect = Vec::<Pixel>::with_capacity(width * height);
+
+        for row in 0..height {
+            for column in 0..width {
+                let source_position = (column + position.0 .0, row + position.0 .1);
+
+                if let Some(source_index) = self.get_index_from_position(source_position.into()) {
+                    rect.push(self.pixels[source_index]);
+                } else {
+                    rect.push(colors::transparent());
+                }
+            }
+        }
+
+        RasterChunk {
+            pixels: Rc::from(rect.into_boxed_slice()),
+            dimensions: Dimensions { width, height },
+        }
+    }
+}
+
+impl From<BoxRasterChunk> for RcRasterChunk {
+    fn from(box_raster_chunk: BoxRasterChunk) -> Self {
+        RcRasterChunk {
+            pixels: Rc::from(box_raster_chunk.pixels),
+            dimensions: box_raster_chunk.dimensions,
+        }
     }
 }

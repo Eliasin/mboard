@@ -188,8 +188,8 @@ mod test {
         let mut scaled = gradient_chunk.clone();
         scaled.nn_scale(new_dimensions);
 
-        let mut expected_scaled = gradient_chunk.clone();
-        expected_scaled.nn_scale_with_map(&nn_map).unwrap();
+        let expected_scaled = gradient_chunk.clone();
+        let expected_scaled = expected_scaled.nn_scaled_with_map(&nn_map).unwrap();
 
         assert_raster_eq!(scaled, expected_scaled);
     }
