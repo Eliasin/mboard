@@ -22,6 +22,17 @@ pub trait Polygon {
     }
 }
 
+fn color_from_inside_proportion(color: Pixel, p: u8) -> Pixel {
+    let u = p as f32 / 255.0;
+    let (r, g, b, a) = color.as_rgba();
+
+    let a = a as f32 * u.powf(1.5);
+
+    let (r, g, b, a): (u8, u8, u8, u8) = (r, g, b, a.clamp(0.0, 255.0) as u8);
+
+    Pixel::new_rgba(r, g, b, a)
+}
+
 /// A way to rasterize a polygon.
 pub trait RasterizablePolygon {
     /// Rasterization of the polygon as a raster chunk.
@@ -186,14 +197,7 @@ impl Polygon for Oval {
     }
 
     fn color_from_inside_proportion(&self, p: u8) -> Pixel {
-        let u = p as f32 / 255.0;
-        let (r, g, b, a) = self.color.as_rgba();
-
-        let a = a as f32 * u.powf(1.5);
-
-        let (r, g, b, a): (u8, u8, u8, u8) = (r, g, b, a.clamp(0.0, 255.0) as u8);
-
-        Pixel::new_rgba(r, g, b, a)
+        color_from_inside_proportion(self.color, p)
     }
 }
 
@@ -231,6 +235,94 @@ impl Polygon for Circle {
 
     fn inside_proportion(&self, p: &PixelPosition) -> u8 {
         self.oval.inside_proportion(p)
+    }
+}
+
+/// A line segment with some fill radius.
+pub struct LineSegment {
+    from_origin: (i32, i32),
+    radius: usize,
+    color: Pixel,
+    roughness: u32,
+}
+
+impl LineSegment {
+    pub fn new_from_point_from_origin(
+        point_from_origin: (i32, i32),
+        radius: usize,
+        color: Pixel,
+        roughness: u32,
+    ) -> LineSegment {
+        LineSegment {
+            from_origin: point_from_origin,
+            radius,
+            color,
+            roughness,
+        }
+    }
+
+    pub fn new_from_two_points(
+        point_a: (i32, i32),
+        point_b: (i32, i32),
+        radius: usize,
+        color: Pixel,
+        roughness: u32,
+    ) -> LineSegment {
+        let from_origin = (point_a.0 - point_b.0, point_a.1 - point_b.1);
+
+        LineSegment {
+            from_origin,
+            radius,
+            color,
+            roughness,
+        }
+    }
+}
+
+fn dot_product(a: (i32, i32), b: (i32, i32)) -> i32 {
+    a.0 * b.0 + a.1 * b.1
+}
+
+const LINE_SEGMENT_RADIAL_PADDING: f32 = 1.1;
+
+impl Polygon for LineSegment {
+    fn bounding_box(&self) -> (usize, usize) {
+        let padded_width = ((self.from_origin.0.abs() as usize) + self.radius) as f32
+            * LINE_SEGMENT_RADIAL_PADDING;
+        let padded_height = ((self.from_origin.0.abs() as usize) + self.radius) as f32
+            * LINE_SEGMENT_RADIAL_PADDING;
+
+        (padded_width as usize, padded_height as usize)
+    }
+
+    fn inside_proportion(&self, p: &PixelPosition) -> u8 {
+        let p: (i32, i32) = (p.0 .0 as i32, p.0 .1 as i32);
+
+        let factor = (dot_product(p, self.from_origin) as f32)
+            / (dot_product(self.from_origin, self.from_origin) as f32);
+
+        let float_from_origin = (self.from_origin.0 as f32, self.from_origin.1 as f32);
+        let orthogonal_projection = (float_from_origin.0 * factor, float_from_origin.1 * factor);
+
+        let distance_vector = (
+            p.0 as f32 - orthogonal_projection.0,
+            p.1 as f32 - orthogonal_projection.1,
+        );
+
+        let distance = f32::sqrt(distance_vector.0.powi(2) + distance_vector.1.powi(2));
+
+        let rel_distance = distance / self.radius as f32;
+        let roughness = self.roughness as f32 / 10.0;
+
+        if rel_distance < 1.0 {
+            255
+        } else {
+            ((1.0 - (rel_distance - 1.0).mul(roughness)) * 255.0).clamp(0.0, 255.0) as u8
+        }
+    }
+
+    fn color_from_inside_proportion(&self, p: u8) -> Pixel {
+        color_from_inside_proportion(self.color, p)
     }
 }
 
@@ -274,5 +366,18 @@ mod tests {
         let expected_b = Oval::build_from_bound(1, 3).build();
 
         assert_eq!(oval_b, expected_b);
+    }
+
+    #[test]
+    fn sanity_check_line_segment() {
+        let line_segment =
+            LineSegment::new_from_point_from_origin((20, 20), 2, colors::red(), 100000);
+
+        let line_segment_raster = line_segment.rasterize();
+
+        assert!(line_segment_raster.pixels()[19].is_close(&Pixel::new_rgba(255, 0, 0, 0), 2));
+        assert!(
+            line_segment_raster.pixels()[20 * 20 - 19].is_close(&Pixel::new_rgba(255, 0, 0, 0), 2)
+        );
     }
 }
