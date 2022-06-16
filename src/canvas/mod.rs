@@ -455,7 +455,7 @@ mod tests {
     use crate::raster::{chunks::IndexableByPosition, Pixel, RasterLayerAction};
 
     #[test]
-    fn test_transform_view_to_canvas() {
+    fn transform_view_to_canvas() {
         let mut view = CanvasView::new(10, 10);
 
         view.translate((-5, -5));
@@ -488,7 +488,7 @@ mod tests {
     }
 
     #[test]
-    fn test_compositing_rasters() {
+    fn compositing_rasters() {
         let mut canvas = Canvas::default();
         let mut red_layer = RasterLayer::new(128);
         let mut blue_layer = RasterLayer::new(128);
@@ -534,7 +534,7 @@ mod tests {
     }
 
     #[test]
-    fn test_view_rect_conversion_easy() {
+    fn view_rect_conversion_easy() {
         let mut view = CanvasView::new(10, 15);
         view.translate((5, 5));
 
@@ -559,7 +559,7 @@ mod tests {
     }
 
     #[test]
-    fn test_view_rect_conversion_medium() {
+    fn view_rect_conversion_medium() {
         let mut view = CanvasView::new(10, 20);
         view.canvas_dimensions = Dimensions {
             width: 20,
@@ -587,7 +587,7 @@ mod tests {
     }
 
     #[test]
-    fn test_spanning_canvas_rect() {
+    fn spanning_canvas_rect() {
         let rect_a = CanvasRect {
             top_left: CanvasPosition((3, 4)),
             dimensions: Dimensions {
@@ -644,7 +644,7 @@ mod tests {
     }
 
     #[test]
-    fn test_canvas_rect_containment() {
+    fn canvas_rect_containment() {
         let rect_a = CanvasRect {
             top_left: CanvasPosition((-5, -10)),
             dimensions: Dimensions {
@@ -696,7 +696,7 @@ mod tests {
     }
 
     #[test]
-    fn test_canvas_rect_expansion() {
+    fn canvas_rect_expansion() {
         let canvas_rect = CanvasRect {
             top_left: CanvasPosition((0, 0)),
             dimensions: Dimensions {

@@ -350,7 +350,7 @@ mod tests {
     }
 
     #[test]
-    fn test_canvas_rect_rasterization_cache_caches_renders() {
+    fn canvas_rect_rasterization_cache_caches_renders() {
         let mut cache = CanvasRectRasterCache::default();
 
         let render_chunk = BoxRasterChunk::new_fill(colors::green(), 512, 512);
@@ -383,7 +383,7 @@ mod tests {
     }
 
     #[test]
-    fn test_canvas_rect_rasterization_cache_doesnt_rerender() {
+    fn canvas_rect_rasterization_cache_doesnt_rerender() {
         // Ensure that the cache does not re-render unnecessarily
 
         let render_chunk = BoxRasterChunk::new_fill(colors::green(), 64, 64);

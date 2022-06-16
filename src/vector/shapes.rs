@@ -332,7 +332,7 @@ mod tests {
     use crate::raster::chunks::IndexableByPosition;
 
     #[test]
-    fn test_circle_rasterization() {
+    fn circle_rasterization() {
         let radius = 10.0;
         let roughness = 1000.0;
         let circle = Circle::new_roughness(radius, roughness);
@@ -356,7 +356,7 @@ mod tests {
     }
 
     #[test]
-    fn test_oval_builder() {
+    fn oval_builder() {
         let oval_a = Oval::new(5.0, 2.0);
         let expected_a = Oval::build(5.0, 2.0).build();
 

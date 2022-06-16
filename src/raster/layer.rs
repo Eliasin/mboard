@@ -456,7 +456,7 @@ mod tests {
     use crate::{assert_raster_eq, raster::pixels::colors};
 
     #[test]
-    fn test_chunk_visibility_easy() {
+    fn chunk_visibility_easy() {
         let raster_layer = RasterLayer::new(10);
 
         let mut canvas_rect = CanvasRect::at_origin(10, 10);
@@ -491,7 +491,7 @@ mod tests {
     }
 
     #[test]
-    fn test_chunk_visibility_medium() {
+    fn chunk_visibility_medium() {
         let raster_layer = RasterLayer::new(1024);
 
         let mut canvas_rect = CanvasRect::at_origin(2000, 2000);
@@ -512,7 +512,7 @@ mod tests {
     }
 
     #[test]
-    fn test_chunk_visibility_hard() {
+    fn chunk_visibility_hard() {
         let raster_layer = RasterLayer::new(512);
 
         let mut canvas_rect = CanvasRect::at_origin(2000, 1000);
@@ -533,7 +533,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rasterize_offset() {
+    fn rasterize_offset() {
         let mut raster_layer = RasterLayer::new(10);
 
         let red_chunk = BoxRasterChunk::new_fill(colors::red(), 10, 10);
@@ -554,7 +554,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rasterization_easy() {
+    fn rasterization_easy() {
         let mut raster_layer = RasterLayer::new(10);
 
         let red_chunk = BoxRasterChunk::new_fill(colors::red(), 10, 10);
@@ -575,7 +575,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rasterization_medium() {
+    fn rasterization_medium() {
         let mut raster_layer = RasterLayer::new(10);
 
         let red_chunk = BoxRasterChunk::new_fill(colors::red(), 10, 10);
@@ -601,7 +601,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rasterization_hard() {
+    fn rasterization_hard() {
         let mut raster_layer = RasterLayer::new(100);
 
         let red_chunk = BoxRasterChunk::new_fill(colors::red(), 100, 100);
@@ -631,7 +631,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fill_rect_easy() {
+    fn fill_rect_easy() {
         let mut raster_layer = RasterLayer::new(10);
 
         let rect = CanvasRect {
@@ -654,7 +654,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fill_rect_medium() {
+    fn fill_rect_medium() {
         let mut raster_layer = RasterLayer::new(10);
 
         let rect = CanvasRect {
@@ -681,7 +681,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fill_rect_action_hard() {
+    fn fill_rect_action_hard() {
         let mut raster_layer = RasterLayer::new(10);
 
         let left_rect = CanvasRect {
@@ -719,7 +719,7 @@ mod tests {
     }
 
     #[test]
-    fn test_scaled_rasterization() {
+    fn scaled_rasterization() {
         let mut raster_layer = RasterLayer::new(20);
         let left_rect = CanvasRect {
             top_left: CanvasPosition((9, 9)),
@@ -751,7 +751,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fill_oval_easy() {
+    fn fill_oval_easy() {
         let mut raster_layer = RasterLayer::new(30);
         let view = CanvasView::new(30, 30);
 
@@ -776,7 +776,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fill_oval_medium() {
+    fn fill_oval_medium() {
         let mut raster_layer = RasterLayer::new(30);
         let view = CanvasView::new(30, 30);
 
@@ -801,7 +801,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fill_oval_border() {
+    fn fill_oval_border() {
         let mut raster_layer = RasterLayer::new(30);
         let view = CanvasView::new(60, 60);
 

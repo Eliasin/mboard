@@ -171,7 +171,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_compositing() {
+    fn compositing() {
         let mut should_be_blue = colors::red();
         should_be_blue.composite_over(&colors::blue());
 
@@ -194,7 +194,7 @@ mod tests {
     }
 
     #[test]
-    fn test_inverse() {
+    fn inverse() {
         assert_eq!(Pixel::new_rgba(2, 4, 8, 16).as_rgba(), (2, 4, 8, 16));
         assert!(
             float_max_delta(
@@ -205,7 +205,7 @@ mod tests {
     }
 
     #[test]
-    fn test_is_close() {
+    fn is_close() {
         assert!(colors::red().is_close(&colors::red(), 0));
 
         assert!(Pixel::new_rgb(245, 0, 0).is_close(&colors::red(), 10));
@@ -216,7 +216,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rgb_default() {
+    fn rgb_default() {
         assert_eq!(Pixel::new_rgba(255, 0, 0, 255), Pixel::new_rgb(255, 0, 0));
     }
 }

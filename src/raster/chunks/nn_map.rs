@@ -161,7 +161,7 @@ mod test {
     use super::NearestNeighbourMap;
 
     #[test]
-    fn test_scaling_using_map_is_same_as_without() {
+    fn scaling_using_map_is_same_as_without() {
         let gradient_chunk = BoxRasterChunk::new_fill_dynamic(
             |p| {
                 Pixel::new_rgb_norm(
