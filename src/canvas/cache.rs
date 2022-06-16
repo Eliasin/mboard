@@ -3,10 +3,9 @@ use lru::LruCache;
 use crate::{
     raster::{
         chunks::{
-            nn_map::{InvalidScaleError, NearestNeighbourMap},
-            BoxRasterChunk, RasterWindow,
+            nn_map::NearestNeighbourMap, raster_chunk::RcRasterChunk, BoxRasterChunk, RasterWindow,
         },
-        position::{Dimensions, DrawPosition},
+        position::{Dimensions, DrawPosition, Scale},
     },
     vector::shapes::{Oval, RasterizablePolygon},
 };
@@ -43,26 +42,146 @@ pub struct CanvasViewRasterCache {
     nn_map_cache: NearestNeighbourMapCache,
 }
 
+impl CanvasViewRasterCache {
+    fn prerender_view_area<R>(
+        view: &CanvasView,
+        nn_map_cache: &mut NearestNeighbourMapCache,
+        rasterizer: &mut R,
+    ) -> CachedScaledCanvasRaster
+    where
+        R: FnMut(&CanvasRect) -> BoxRasterChunk,
+    {
+        let requested_canvas_rect = view.canvas_rect();
+        let expanded_canvas_rect =
+            requested_canvas_rect.expand(requested_canvas_rect.dimensions.largest_dimension());
+
+        let expanded_view = {
+            let mut t = view.clone();
+            t.pin_scale(
+                Scale::new(
+                    expanded_canvas_rect.dimensions.width as f32
+                        / view.canvas_dimensions.width as f32,
+                    expanded_canvas_rect.dimensions.height as f32
+                        / view.canvas_dimensions.height as f32,
+                )
+                .unwrap(),
+            );
+            t
+        };
+
+        let nn_map = nn_map_cache.get_nn_map_for_view(&expanded_view);
+        let raster_chunk = rasterizer(&expanded_view.canvas_rect())
+            .nn_scaled_with_map(nn_map)
+            .unwrap();
+        CachedScaledCanvasRaster {
+            cached_chunk_position: expanded_view.top_left,
+            cached_chunk: raster_chunk.into(),
+            canvas_dimensions: expanded_view.canvas_dimensions,
+        }
+    }
+
+    pub fn rerender_canvas_rect<R>(&mut self, canvas_rect: &CanvasRect, rasterizer: &mut R)
+    where
+        R: FnMut(&CanvasRect) -> BoxRasterChunk,
+    {
+        if let Some(cached_canvas_raster) = &mut self.cached_raster {
+            let cached_view = cached_canvas_raster.view();
+
+            if let Some(view_rect_needing_rerender) =
+                cached_view.transform_canvas_rect_to_view(canvas_rect)
+            {
+                let new_chunk =
+                    rasterizer(&canvas_rect).nn_scaled(view_rect_needing_rerender.dimensions);
+                let draw_position: DrawPosition = view_rect_needing_rerender.top_left.into();
+
+                match cached_canvas_raster.cached_chunk.get_mut() {
+                    Some(mut cached_chunk) => {
+                        cached_chunk.blit(&new_chunk.as_window(), draw_position);
+                    }
+                    None => {
+                        cached_canvas_raster.cached_chunk =
+                            cached_canvas_raster.cached_chunk.diverge();
+
+                        let mut cached_chunk = cached_canvas_raster.cached_chunk.get_mut().unwrap();
+                        cached_chunk.blit(&new_chunk.as_window(), draw_position);
+                    }
+                }
+            }
+        }
+    }
+
+    fn get_chunk_from_cache<'a, R>(
+        cached_canvas_raster: &'a mut CachedScaledCanvasRaster,
+        nn_map_cache: &mut NearestNeighbourMapCache,
+        view: &CanvasView,
+        rasterizer: &mut R,
+    ) -> RasterWindow<'a>
+    where
+        R: FnMut(&CanvasRect) -> BoxRasterChunk,
+    {
+        // We don't use an if-let here due to some lifetime issues
+        // it causes, primarily, this one https://github.com/rust-lang/rust/issues/54663
+        if view.scale_eq(&cached_canvas_raster.view()) && cached_canvas_raster.has_view_cached(view)
+        {
+            cached_canvas_raster.get_window(view).unwrap()
+        } else {
+            *cached_canvas_raster =
+                CanvasViewRasterCache::prerender_view_area(view, nn_map_cache, rasterizer);
+            cached_canvas_raster.get_window(view).unwrap()
+        }
+    }
+
+    pub fn get_chunk_or_rasterize<R>(
+        &mut self,
+        view: &CanvasView,
+        rasterizer: &mut R,
+    ) -> RasterWindow
+    where
+        R: FnMut(&CanvasRect) -> BoxRasterChunk,
+    {
+        let cached_canvas_raster = self.cached_raster.get_or_insert_with(|| {
+            CanvasViewRasterCache::prerender_view_area(view, &mut self.nn_map_cache, rasterizer)
+        });
+
+        CanvasViewRasterCache::get_chunk_from_cache(
+            cached_canvas_raster,
+            &mut self.nn_map_cache,
+            view,
+            rasterizer,
+        )
+    }
+}
+
 struct CachedScaledCanvasRaster {
     cached_chunk_position: CanvasPosition,
-    view_dimensions: Dimensions,
-    cached_chunk: BoxRasterChunk,
+    canvas_dimensions: Dimensions,
+    cached_chunk: RcRasterChunk,
 }
 
 impl CachedScaledCanvasRaster {
-    fn try_new_cached_from_scaling_canvas_raster(
-        cached_canvas_raster: CachedCanvasRaster,
-        nn_map: NearestNeighbourMap,
-    ) -> Result<CachedScaledCanvasRaster, InvalidScaleError> {
-        let scaled = cached_canvas_raster
-            .cached_chunk
-            .nn_scaled_with_map(&nn_map)?;
+    pub fn get_window(&self, view: &CanvasView) -> Option<RasterWindow> {
+        let cached_view = self.view();
 
-        Ok(CachedScaledCanvasRaster {
-            cached_chunk_position: cached_canvas_raster.cached_chunk_position,
-            view_dimensions: nn_map.destination_dimensions(),
-            cached_chunk: cached_canvas_raster.cached_chunk,
-        })
+        let requested_rect = cached_view.transform_canvas_rect_to_view(&view.canvas_rect())?;
+
+        RasterWindow::new(
+            &self.cached_chunk,
+            requested_rect.top_left,
+            requested_rect.dimensions.width,
+            requested_rect.dimensions.height,
+        )
+    }
+
+    pub fn has_view_cached(&self, view: &CanvasView) -> bool {
+        self.get_window(view).is_some()
+    }
+
+    pub fn view(&self) -> CanvasView {
+        CanvasView {
+            top_left: self.cached_chunk_position,
+            view_dimensions: self.cached_chunk.dimensions(),
+            canvas_dimensions: self.canvas_dimensions,
+        }
     }
 }
 
@@ -70,6 +189,21 @@ impl CachedScaledCanvasRaster {
 pub struct CanvasRectRasterCache(Option<CachedCanvasRaster>);
 
 impl CanvasRectRasterCache {
+    fn prerender_canvas_rect_area<R>(
+        canvas_rect: &CanvasRect,
+        rasterizer: &mut R,
+    ) -> CachedCanvasRaster
+    where
+        R: FnMut(&CanvasRect) -> BoxRasterChunk,
+    {
+        let expanded_canvas_rect = canvas_rect.expand(canvas_rect.dimensions.largest_dimension());
+        let raster_chunk = rasterizer(&expanded_canvas_rect);
+        CachedCanvasRaster {
+            cached_chunk_position: expanded_canvas_rect.top_left,
+            cached_chunk: raster_chunk,
+        }
+    }
+
     pub fn rerender_canvas_rect<R>(&mut self, canvas_rect: &CanvasRect, rasterizer: &mut R)
     where
         R: FnMut(&CanvasRect) -> BoxRasterChunk,
@@ -102,14 +236,8 @@ impl CanvasRectRasterCache {
         if cached_canvas_raster.has_rect_cached(canvas_rect) {
             cached_canvas_raster.get_window(canvas_rect).unwrap()
         } else {
-            // Pre-render surrounding area
-            let expanded_canvas_rect =
-                canvas_rect.expand(canvas_rect.dimensions.largest_dimension());
-            let raster_chunk = rasterizer(&expanded_canvas_rect);
-            *cached_canvas_raster = CachedCanvasRaster {
-                cached_chunk_position: expanded_canvas_rect.top_left,
-                cached_chunk: raster_chunk,
-            };
+            *cached_canvas_raster =
+                CanvasRectRasterCache::prerender_canvas_rect_area(canvas_rect, rasterizer);
 
             cached_canvas_raster.get_window(canvas_rect).unwrap()
         }
@@ -124,14 +252,7 @@ impl CanvasRectRasterCache {
         R: FnMut(&CanvasRect) -> BoxRasterChunk,
     {
         let cached_canvas_raster = self.0.get_or_insert_with(|| {
-            // Pre-render surrounding area
-            let expanded_canvas_rect =
-                canvas_rect.expand(canvas_rect.dimensions.largest_dimension());
-            let raster_chunk = rasterizer(&expanded_canvas_rect);
-            CachedCanvasRaster {
-                cached_chunk_position: expanded_canvas_rect.top_left,
-                cached_chunk: raster_chunk,
-            }
+            CanvasRectRasterCache::prerender_canvas_rect_area(canvas_rect, rasterizer)
         });
 
         CanvasRectRasterCache::get_chunk_from_cache(cached_canvas_raster, canvas_rect, rasterizer)
@@ -205,14 +326,28 @@ impl Default for NearestNeighbourMapCache {
 
 #[cfg(test)]
 mod tests {
-    use super::{CachedCanvasRaster, CanvasRectRasterCache};
+    use super::{CachedCanvasRaster, CanvasRectRasterCache, CanvasViewRasterCache};
     use crate::{
         assert_raster_eq,
-        canvas::{CanvasPosition, CanvasRect},
+        canvas::{CanvasPosition, CanvasRect, CanvasView},
         raster::{
-            chunks::BoxRasterChunk, pixels::colors, position::Dimensions, position::PixelPosition,
+            chunks::BoxRasterChunk,
+            pixels::colors,
+            position::PixelPosition,
+            position::{Dimensions, DrawPosition},
         },
     };
+
+    fn rasterizer_from_chunk(
+        raster_chunk: &BoxRasterChunk,
+    ) -> impl Fn(&CanvasRect) -> BoxRasterChunk + '_ {
+        |rect: &CanvasRect| {
+            let position =
+                PixelPosition((rect.top_left.0 .0 as usize, rect.top_left.0 .1 as usize));
+
+            raster_chunk.clone_square(position, rect.dimensions.width, rect.dimensions.height)
+        }
+    }
 
     #[test]
     fn test_canvas_rect_rasterization_cache_caches_renders() {
@@ -228,13 +363,10 @@ mod tests {
             },
         };
 
-        cache
-            .get_chunk_or_rasterize(&canvas_rect, &mut |rect: &CanvasRect| -> BoxRasterChunk {
-                let position =
-                    PixelPosition((rect.top_left.0 .0 as usize, rect.top_left.0 .1 as usize));
+        let mut rasterizer = rasterizer_from_chunk(&render_chunk);
 
-                render_chunk.clone_square(position, rect.dimensions.width, rect.dimensions.height)
-            })
+        cache
+            .get_chunk_or_rasterize(&canvas_rect, &mut rasterizer)
             .to_chunk();
 
         let expected_cached_chunk = BoxRasterChunk::new_fill(colors::green(), 64 * 3, 64 * 3);
@@ -270,15 +402,81 @@ mod tests {
             },
         };
 
-        let cache_result = cache
-            .get_chunk_or_rasterize(&canvas_rect, &mut |rect: &CanvasRect| -> BoxRasterChunk {
-                let position =
-                    PixelPosition((rect.top_left.0 .0 as usize, rect.top_left.0 .1 as usize));
+        let mut rasterizer = rasterizer_from_chunk(&render_chunk);
 
-                render_chunk.clone_square(position, rect.dimensions.width, rect.dimensions.height)
-            })
+        let cache_result = cache
+            .get_chunk_or_rasterize(&canvas_rect, &mut rasterizer)
             .to_chunk();
 
         assert_raster_eq!(cache_result, cached_chunk);
+    }
+
+    #[test]
+    fn canvas_view_raster_cache() {
+        let mut canvas_view_raster_cache = CanvasViewRasterCache::default();
+        let render_chunk = {
+            let mut render_chunk = BoxRasterChunk::new(100, 100);
+
+            render_chunk.fill_rect(colors::red(), DrawPosition::from((30, 30)), 40, 40);
+
+            render_chunk
+        };
+
+        let mut rasterizer = rasterizer_from_chunk(&render_chunk);
+
+        {
+            let canvas_view = CanvasView {
+                top_left: CanvasPosition((20, 20)),
+                view_dimensions: Dimensions {
+                    width: 10,
+                    height: 10,
+                },
+                canvas_dimensions: Dimensions {
+                    width: 20,
+                    height: 20,
+                },
+            };
+
+            let cached_chunk = canvas_view_raster_cache
+                .get_chunk_or_rasterize(&canvas_view, &mut rasterizer)
+                .to_chunk();
+
+            let expected_chunk = {
+                let mut expected_chunk = BoxRasterChunk::new(10, 10);
+
+                expected_chunk.fill_rect(colors::red(), DrawPosition((5, 5)), 5, 5);
+
+                expected_chunk
+            };
+
+            assert_raster_eq!(cached_chunk, expected_chunk);
+        }
+        {
+            let canvas_view = CanvasView {
+                top_left: CanvasPosition((20, 30)),
+                view_dimensions: Dimensions {
+                    width: 5,
+                    height: 5,
+                },
+                canvas_dimensions: Dimensions {
+                    width: 20,
+                    height: 20,
+                },
+            };
+
+            let cached_chunk = canvas_view_raster_cache
+                .get_chunk_or_rasterize(&canvas_view, &mut rasterizer)
+                .to_chunk();
+
+            let expected_chunk = {
+                let mut expected_chunk = BoxRasterChunk::new(5, 5);
+
+                expected_chunk.fill_rect(colors::red(), DrawPosition((3, 0)), 2, 5);
+
+                expected_chunk
+            };
+
+            assert_raster_eq!(cached_chunk, expected_chunk);
+        }
     }
 }

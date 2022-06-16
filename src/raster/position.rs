@@ -6,6 +6,8 @@
 
 use std::{convert::TryInto, ops::Add};
 
+use crate::canvas::CanvasPosition;
+
 use super::iter::PixelPositionIterator;
 
 /// A position within a 2d collection of pixels.
@@ -49,6 +51,17 @@ impl Scale {
     pub fn height_factor(&self) -> f32 {
         self.height_factor
     }
+
+    /// Whether or not this scale is similar to another.
+    pub fn similar_to(&self, other: Scale) -> bool {
+        (self.width_factor - other.width_factor).abs() < 0.05
+            && (self.height_factor - other.height_factor).abs() < 0.05
+    }
+
+    /// Whether or not this scale is similar to doing nothing.
+    pub fn similar_to_unity(&self) -> bool {
+        (self.width_factor - 1.0).abs() < 0.05 && (self.height_factor - 1.0).abs() < 0.05
+    }
 }
 
 /// The dimensions of a 2d object.
@@ -81,12 +94,20 @@ impl Dimensions {
         }
     }
 
-    /// Gets the difference between this dimension and another.
+    /// The difference between this dimension and another.
     pub fn difference(&self, other: Dimensions) -> (i64, i64) {
         (
             self.width as i64 - other.width as i64,
             self.height as i64 - other.height as i64,
         )
+    }
+
+    /// The relative scale from this dimension space to another.
+    pub fn relative_scale(&self, other: Dimensions) -> Scale {
+        Scale {
+            width_factor: self.width as f32 / other.width as f32,
+            height_factor: self.height as f32 / other.height as f32,
+        }
     }
 
     /// The largest of `width` and `height`.
@@ -150,5 +171,11 @@ impl From<(usize, usize)> for PixelPosition {
 impl From<PixelPosition> for DrawPosition {
     fn from(p: PixelPosition) -> Self {
         DrawPosition((p.0 .0.try_into().unwrap(), p.0 .1.try_into().unwrap()))
+    }
+}
+
+impl From<PixelPosition> for CanvasPosition {
+    fn from(p: PixelPosition) -> Self {
+        CanvasPosition((p.0 .0.try_into().unwrap(), p.0 .1.try_into().unwrap()))
     }
 }

@@ -1,4 +1,4 @@
-use std::{fmt::Display, mem::MaybeUninit};
+use std::{fmt::Display, mem::MaybeUninit, ops::Deref};
 
 use bumpalo::Bump;
 
@@ -8,7 +8,7 @@ use crate::raster::{
 };
 
 use super::{
-    raster_chunk::{BoxRasterChunk, BumpRasterChunk},
+    raster_chunk::{BoxRasterChunk, BumpRasterChunk, RasterChunk},
     util::{
         display_raster_row, translate_rect_position_to_flat_index, BoundedIndex,
         IndexableByPosition, InvalidPixelSliceSize,
@@ -40,8 +40,8 @@ impl<'a> Display for RasterWindow<'a> {
 
 impl<'a> RasterWindow<'a> {
     /// Creates a raster chunk window from a sub-rectangle of a raster chunk. The window area must be completely contained in the chunk.
-    pub fn new(
-        chunk: &'a BoxRasterChunk,
+    pub fn new<T: Deref<Target = [Pixel]>>(
+        chunk: &'a RasterChunk<T>,
         top_left: PixelPosition,
         width: usize,
         height: usize,
@@ -143,7 +143,7 @@ impl<'a> RasterWindow<'a> {
         }
 
         // We initialize the entire chunk within the for loop, so this is sound
-        let chunk_pixels = unsafe { std::mem::transmute::<_, Box<[Pixel]>>(chunk_pixels) };
+        let chunk_pixels = unsafe { chunk_pixels.assume_init() };
 
         BoxRasterChunk {
             pixels: chunk_pixels,
@@ -179,8 +179,8 @@ impl<'a> RasterWindow<'a> {
         }
 
         // We initialize the entire chunk within the for loop, so this is sound
-        let chunk_pixels =
-            unsafe { std::mem::transmute::<_, bumpalo::boxed::Box<'bump, [Pixel]>>(chunk_pixels) };
+        let chunk_pixels = unsafe { std::mem::transmute::<_, &'bump mut [Pixel]>(chunk_pixels) };
+        let chunk_pixels = unsafe { bumpalo::boxed::Box::from_raw(chunk_pixels) };
 
         BumpRasterChunk {
             pixels: chunk_pixels,

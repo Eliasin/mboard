@@ -11,7 +11,7 @@ use enum_dispatch::enum_dispatch;
 mod cache;
 pub use cache::ShapeCache;
 
-use self::cache::{CanvasRectRasterCache, NearestNeighbourMapCache};
+use self::cache::{CanvasRectRasterCache, CanvasViewRasterCache};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct CanvasPosition(pub (i64, i64));
@@ -78,7 +78,7 @@ impl CanvasView {
         self.top_left = self.top_left.translate(d);
     }
 
-    // Change the canvas source of the view while preserving the middle of the view.
+    /// Change the canvas dimensions of the view while preserving the middle of the view.
     pub fn pin_resize_canvas(&mut self, d: Dimensions) {
         let difference = self.canvas_dimensions.difference(d);
 
@@ -86,8 +86,8 @@ impl CanvasView {
         self.canvas_dimensions = d;
     }
 
-    // Scale the canvas source of the view while preserving the middle of the view.
-    // Negative or factors that scale the view too small are ignored.
+    /// Scale the canvas source of the view while preserving the middle of the view.
+    /// Negative or factors that scale the view too small are ignored.
     pub fn pin_scale_canvas(&mut self, factor: Scale) {
         let new_dimensions = self.canvas_dimensions.scale(factor);
 
@@ -96,6 +96,27 @@ impl CanvasView {
         }
 
         self.pin_resize_canvas(new_dimensions);
+    }
+
+    /// Scale the canvas source and view dimensions of the view while preserving
+    /// the middle of the view. Negatives or factors that scale the view too small are ignored.
+    pub fn pin_scale(&mut self, factor: Scale) {
+        let new_canvas_dimensions = self.canvas_dimensions.scale(factor);
+        let new_view_dimensions = self.view_dimensions.scale(factor);
+
+        if new_canvas_dimensions.width < 1
+            || new_canvas_dimensions.height < 1
+            || new_view_dimensions.width < 1
+            || new_view_dimensions.height < 1
+        {
+            return;
+        }
+
+        let difference = self.canvas_dimensions.difference(new_canvas_dimensions);
+
+        self.top_left = self.top_left.translate_scaled(difference, 2);
+        self.canvas_dimensions = new_canvas_dimensions;
+        self.view_dimensions = new_view_dimensions;
     }
 
     /// Transforms a point from view space to canvas space.
@@ -113,8 +134,8 @@ impl CanvasView {
         let translated_point = p.translate((-self.top_left.0 .0, -self.top_left.0 .1));
 
         let point_past_top_left = translated_point.0 .0 < 0 || translated_point.0 .1 < 0;
-        let point_past_bottom_right = translated_point.0 .0 >= self.canvas_dimensions.width as i64
-            || translated_point.0 .1 >= self.canvas_dimensions.height as i64;
+        let point_past_bottom_right = translated_point.0 .0 > self.canvas_dimensions.width as i64
+            || translated_point.0 .1 > self.canvas_dimensions.height as i64;
         if point_past_top_left || point_past_bottom_right {
             None
         } else {
@@ -128,10 +149,44 @@ impl CanvasView {
         }
     }
 
+    /// Attempt to transform a rect in canvas space to a rect
+    /// in view space. Canvas rects not fully in view will map to `None`;
+    pub fn transform_canvas_rect_to_view(&self, r: &CanvasRect) -> Option<ViewRect> {
+        let top_left = self.transform_canvas_to_view(r.top_left)?;
+        let bottom_right = self.transform_canvas_to_view(r.bottom_right())?;
+
+        Some(ViewRect::new_points(top_left, bottom_right))
+    }
+
+    /// Transform a rect in view space to a rect in canvas space.
+    pub fn transform_view_rect_to_canvas(&self, r: &ViewRect) -> CanvasRect {
+        let top_left = self.transform_view_to_canvas(r.top_left);
+        let bottom_right = self.transform_view_to_canvas(r.bottom_right());
+
+        CanvasRect::new_points(top_left, bottom_right)
+    }
+
     /// Create a `NearestNeighbourMap` for the transformation from the canvas
     /// dimensions to the view dimensions of this `CanvasView`.
     pub fn create_nn_map_to_view_dimensions(&self) -> NearestNeighbourMap {
         NearestNeighbourMap::new(self.canvas_dimensions, self.view_dimensions)
+    }
+
+    pub fn canvas_rect(&self) -> CanvasRect {
+        CanvasRect {
+            top_left: self.top_left,
+            dimensions: self.canvas_dimensions,
+        }
+    }
+
+    pub fn scale_eq(&self, other: &CanvasView) -> bool {
+        let scale = self.canvas_dimensions.relative_scale(self.view_dimensions);
+
+        let other_scale = other
+            .canvas_dimensions
+            .relative_scale(other.view_dimensions);
+
+        scale.similar_to(other_scale)
     }
 }
 
@@ -140,6 +195,28 @@ impl CanvasView {
 pub struct ViewRect {
     pub top_left: PixelPosition,
     pub dimensions: Dimensions,
+}
+
+impl ViewRect {
+    /// A view rect defined by two points.
+    pub fn new_points(a: PixelPosition, b: PixelPosition) -> ViewRect {
+        let top_left = (a.0 .0.min(b.0 .0), a.0 .1.min(b.0 .1));
+        let bottom_right = (a.0 .0.max(b.0 .0), a.0 .1.max(b.0 .1));
+
+        ViewRect {
+            top_left: PixelPosition(top_left),
+            dimensions: Dimensions {
+                width: bottom_right.0 - top_left.0,
+                height: bottom_right.1 - top_left.1,
+            },
+        }
+    }
+
+    /// The bottom right of a view rect.
+    pub fn bottom_right(&self) -> PixelPosition {
+        self.top_left
+            .translate((self.dimensions.width, self.dimensions.height))
+    }
 }
 
 /// A rectangle in canvas-space that can be used for operations
@@ -151,30 +228,24 @@ pub struct CanvasRect {
 }
 
 impl CanvasRect {
+    pub fn new_points(a: CanvasPosition, b: CanvasPosition) -> CanvasRect {
+        let top_left = (a.0 .0.min(b.0 .0), a.0 .1.min(b.0 .1));
+        let bottom_right = (a.0 .0.max(b.0 .0), a.0 .1.max(b.0 .1));
+
+        CanvasRect {
+            top_left: CanvasPosition(top_left),
+            dimensions: Dimensions {
+                width: (bottom_right.0 - top_left.0) as usize,
+                height: (bottom_right.1 - top_left.1) as usize,
+            },
+        }
+    }
+
     pub fn at_origin(width: usize, height: usize) -> CanvasRect {
         CanvasRect {
             top_left: CanvasPosition((0, 0)),
             dimensions: Dimensions { width, height },
         }
-    }
-
-    pub fn to_view_rect(&self, view: &CanvasView) -> Option<ViewRect> {
-        let top_left_in_view = view.transform_canvas_to_view(self.top_left)?;
-
-        let transformed_dimensions = view.view_dimensions.transform_point(
-            PixelPosition((self.dimensions.width - 1, self.dimensions.height - 1)),
-            view.canvas_dimensions,
-        );
-
-        let dimensions = Dimensions {
-            width: transformed_dimensions.0 .0 + 1,
-            height: transformed_dimensions.0 .1 + 1,
-        };
-
-        Some(ViewRect {
-            top_left: top_left_in_view,
-            dimensions,
-        })
     }
 
     /// A rect that contains both this `CanvasRect` and `other`.
@@ -272,26 +343,18 @@ pub trait Layer {
 pub struct Canvas {
     layers: Vec<LayerImplementation>,
     shape_cache: ShapeCache,
-    rasterization_cache: CanvasRectRasterCache,
-    nn_map_cache: NearestNeighbourMapCache,
+    rect_raster_cache: CanvasRectRasterCache,
+    view_raster_cache: CanvasViewRasterCache,
 }
 
 impl Canvas {
     pub fn render(&mut self, view: &CanvasView) -> BoxRasterChunk {
-        let mut raster = self.render_canvas_rect(CanvasRect {
-            top_left: view.top_left,
-            dimensions: view.canvas_dimensions,
-        });
+        let layers = &mut self.layers;
+        let raster = self
+            .view_raster_cache
+            .get_chunk_or_rasterize(view, &mut |c| Canvas::rasterize_canvas_rect(layers, *c));
 
-        let nn_map = self.nn_map_cache.get_nn_map_for_view(view);
-
-        raster.nn_scaled_with_map(nn_map).expect(
-            "raster should always be correct \
-                     size for view based nn_map, \
-                     as the raster size is derived from the view",
-        );
-
-        raster
+        raster.to_chunk()
     }
 
     pub fn render_into_bump<'bump>(
@@ -299,31 +362,12 @@ impl Canvas {
         view: &CanvasView,
         bump: &'bump Bump,
     ) -> BumpRasterChunk<'bump> {
-        if view.canvas_dimensions != view.view_dimensions {
-            let mut raster = self.render_canvas_rect_into_bump(
-                CanvasRect {
-                    top_left: view.top_left,
-                    dimensions: view.canvas_dimensions,
-                },
-                bump,
-            );
+        let layers = &mut self.layers;
+        let raster = self
+            .view_raster_cache
+            .get_chunk_or_rasterize(view, &mut |c| Canvas::rasterize_canvas_rect(layers, *c));
 
-            let nn_map = self.nn_map_cache.get_nn_map_for_view(view);
-
-            raster.nn_scale_with_map_into_bump(nn_map, bump).expect(
-                "raster should always be correct \
-                     size for view based nn_map, \
-                     as the raster size is derived from the view",
-            )
-        } else {
-            self.render_canvas_rect_into_bump(
-                CanvasRect {
-                    top_left: view.top_left,
-                    dimensions: view.canvas_dimensions,
-                },
-                bump,
-            )
-        }
+        raster.to_chunk_into_bump(bump)
     }
 
     fn rasterize_canvas_rect(
@@ -348,7 +392,7 @@ impl Canvas {
 
     pub fn render_canvas_rect(&mut self, canvas_rect: CanvasRect) -> BoxRasterChunk {
         let layers = &mut self.layers;
-        self.rasterization_cache
+        self.rect_raster_cache
             .get_chunk_or_rasterize(&canvas_rect, &mut |c| {
                 Canvas::rasterize_canvas_rect(layers, *c)
             })
@@ -361,7 +405,7 @@ impl Canvas {
         bump: &'bump Bump,
     ) -> BumpRasterChunk<'bump> {
         let layers = &mut self.layers;
-        self.rasterization_cache
+        self.rect_raster_cache
             .get_chunk_or_rasterize(&canvas_rect, &mut |c| {
                 Canvas::rasterize_canvas_rect(layers, *c)
             })
@@ -386,7 +430,11 @@ impl Canvas {
 
                     let layers = &mut self.layers;
                     if let Some(changed_canvas_rect) = changed_canvas_rect {
-                        self.rasterization_cache
+                        self.rect_raster_cache
+                            .rerender_canvas_rect(&changed_canvas_rect, &mut |c| {
+                                Canvas::rasterize_canvas_rect(layers, *c)
+                            });
+                        self.view_raster_cache
                             .rerender_canvas_rect(&changed_canvas_rect, &mut |c| {
                                 Canvas::rasterize_canvas_rect(layers, *c)
                             });
@@ -499,7 +547,7 @@ mod tests {
         };
 
         assert_eq!(
-            canvas_rect.to_view_rect(&view),
+            view.transform_canvas_rect_to_view(&canvas_rect),
             Some(ViewRect {
                 top_left: PixelPosition((5, 5)),
                 dimensions: Dimensions {
@@ -527,7 +575,7 @@ mod tests {
         };
 
         assert_eq!(
-            canvas_rect.to_view_rect(&view),
+            view.transform_canvas_rect_to_view(&canvas_rect),
             Some(ViewRect {
                 top_left: PixelPosition((6, 5)),
                 dimensions: Dimensions {
@@ -668,5 +716,181 @@ mod tests {
         };
 
         assert_eq!(expanded_a, expected_a);
+    }
+
+    #[test]
+    fn view_transform_rect() {
+        let canvas_view = CanvasView {
+            top_left: CanvasPosition((-5, -5)),
+            view_dimensions: Dimensions {
+                width: 10,
+                height: 10,
+            },
+            canvas_dimensions: Dimensions {
+                width: 5,
+                height: 5,
+            },
+        };
+
+        let canvas_rect_a = CanvasRect {
+            top_left: CanvasPosition((-5, -5)),
+            dimensions: Dimensions {
+                width: 5,
+                height: 5,
+            },
+        };
+
+        assert_eq!(
+            canvas_view.transform_canvas_rect_to_view(&canvas_rect_a),
+            Some(ViewRect {
+                top_left: PixelPosition((0, 0)),
+                dimensions: Dimensions {
+                    width: 10,
+                    height: 10
+                }
+            })
+        );
+
+        let canvas_view = CanvasView {
+            top_left: CanvasPosition((-10, -10)),
+            view_dimensions: Dimensions {
+                width: 10,
+                height: 10,
+            },
+            canvas_dimensions: Dimensions {
+                width: 20,
+                height: 20,
+            },
+        };
+
+        let canvas_rect_b = CanvasRect {
+            top_left: CanvasPosition((0, 0)),
+            dimensions: Dimensions {
+                width: 10,
+                height: 10,
+            },
+        };
+
+        assert_eq!(
+            canvas_view.transform_canvas_rect_to_view(&canvas_rect_b),
+            Some(ViewRect {
+                top_left: PixelPosition((5, 5)),
+                dimensions: Dimensions {
+                    width: 5,
+                    height: 5
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn canvas_view_scaling() {
+        let canvas_view = CanvasView {
+            top_left: CanvasPosition((10, 10)),
+            view_dimensions: Dimensions {
+                width: 10,
+                height: 10,
+            },
+            canvas_dimensions: Dimensions {
+                width: 10,
+                height: 10,
+            },
+        };
+
+        {
+            let mut canvas_view = canvas_view;
+
+            canvas_view.pin_resize_canvas(Dimensions {
+                width: 20,
+                height: 20,
+            });
+
+            assert_eq!(
+                canvas_view,
+                CanvasView {
+                    top_left: CanvasPosition((5, 5)),
+                    view_dimensions: Dimensions {
+                        width: 10,
+                        height: 10
+                    },
+                    canvas_dimensions: Dimensions {
+                        width: 20,
+                        height: 20
+                    }
+                }
+            );
+        }
+
+        {
+            let mut canvas_view = canvas_view;
+
+            canvas_view.pin_resize_canvas(Dimensions {
+                width: 5,
+                height: 5,
+            });
+
+            assert_eq!(
+                canvas_view,
+                CanvasView {
+                    top_left: CanvasPosition((12, 12)),
+                    view_dimensions: Dimensions {
+                        width: 10,
+                        height: 10
+                    },
+                    canvas_dimensions: Dimensions {
+                        width: 5,
+                        height: 5
+                    }
+                }
+            );
+        }
+
+        {
+            let mut canvas_view = canvas_view;
+
+            canvas_view.pin_scale_canvas(Scale {
+                width_factor: 2.0,
+                height_factor: 2.0,
+            });
+
+            assert_eq!(
+                canvas_view,
+                CanvasView {
+                    top_left: CanvasPosition((5, 5)),
+                    view_dimensions: Dimensions {
+                        width: 10,
+                        height: 10
+                    },
+                    canvas_dimensions: Dimensions {
+                        width: 20,
+                        height: 20
+                    }
+                }
+            );
+        }
+
+        {
+            let mut canvas_view = canvas_view;
+
+            canvas_view.pin_scale(Scale {
+                width_factor: 2.0,
+                height_factor: 2.0,
+            });
+
+            assert_eq!(
+                canvas_view,
+                CanvasView {
+                    top_left: CanvasPosition((5, 5)),
+                    view_dimensions: Dimensions {
+                        width: 20,
+                        height: 20
+                    },
+                    canvas_dimensions: Dimensions {
+                        width: 20,
+                        height: 20
+                    }
+                }
+            );
+        }
     }
 }

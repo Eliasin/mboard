@@ -132,8 +132,9 @@ impl NearestNeighbourMap {
                 chunk_pixels[destination_index].write(source_chunk.pixels[source_index]);
             }
         }
-        let chunk_pixels =
-            unsafe { std::mem::transmute::<_, bumpalo::boxed::Box<'bump, [Pixel]>>(chunk_pixels) };
+
+        let chunk_pixels = unsafe { std::mem::transmute::<_, &'bump mut [Pixel]>(chunk_pixels) };
+        let chunk_pixels = unsafe { bumpalo::boxed::Box::from_raw(chunk_pixels) };
 
         Ok(BumpRasterChunk {
             pixels: chunk_pixels,

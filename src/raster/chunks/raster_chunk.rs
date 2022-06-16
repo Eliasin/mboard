@@ -1,5 +1,6 @@
 use std::{
     fmt::Display,
+    mem::MaybeUninit,
     ops::{Deref, DerefMut},
     rc::Rc,
 };
@@ -27,7 +28,7 @@ pub type BumpRasterChunk<'bump> = RasterChunk<bumpalo::boxed::Box<'bump, [Pixel]
 
 /// A square collection of pixels.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RasterChunk<T: Deref<Target = [Pixel]>> {
+pub struct RasterChunk<T> {
     pub(super) pixels: T,
     pub(super) dimensions: Dimensions,
 }
@@ -151,21 +152,21 @@ impl<T: DerefMut<Target = [Pixel]>> RasterChunk<T> {
     ) where
         F: FnMut(&mut [Pixel]),
     {
-        let bounded_top_left = self.bound_position(dest_position);
+        for row_num in 0..height {
+            if row_num >= self.dimensions.height {
+                break;
+            }
 
-        let shrunk_width = width.min(self.dimensions.width);
-        let shrunk_height = height.min(self.dimensions.height);
-
-        for row_num in 0..shrunk_height {
             let start = self
-                .get_index_from_position(bounded_top_left + (0_usize, row_num))
-                .unwrap();
+                .get_index_from_bounded_position(dest_position + (0_i64, row_num as i64))
+                .index;
+
             let end = self
-                .get_index_from_position(bounded_top_left + (shrunk_width - 1, row_num))
-                .unwrap();
+                .get_index_from_bounded_position(dest_position + (width as i64 - 1, row_num as i64))
+                .index;
 
             let dest_slice = &mut self.pixels[start..end + 1];
-            operation(dest_slice);
+            operation(dest_slice)
         }
     }
 
@@ -652,6 +653,31 @@ impl RcRasterChunk {
         RasterChunk {
             pixels: Rc::from(rect.into_boxed_slice()),
             dimensions: Dimensions { width, height },
+        }
+    }
+}
+
+impl RcRasterChunk {
+    pub fn get_mut(&mut self) -> Option<RasterChunk<&mut [Pixel]>> {
+        let pixels = Rc::get_mut(&mut self.pixels)?;
+
+        Some(RasterChunk {
+            pixels,
+            dimensions: self.dimensions,
+        })
+    }
+
+    pub fn diverge(&self) -> Self {
+        let mut pixels = Box::new_uninit_slice(self.pixels.len());
+
+        MaybeUninit::write_slice(&mut pixels, &*self.pixels);
+
+        let pixels = unsafe { pixels.assume_init() };
+        let pixels = Rc::from(pixels);
+
+        RcRasterChunk {
+            pixels,
+            dimensions: self.dimensions,
         }
     }
 }
