@@ -133,8 +133,13 @@ impl NearestNeighbourMap {
             }
         }
 
-        let chunk_pixels = unsafe { std::mem::transmute::<_, &'bump mut [Pixel]>(chunk_pixels) };
-        let chunk_pixels = unsafe { bumpalo::boxed::Box::from_raw(chunk_pixels) };
+        // Technically we could transmute `chunk_pixels` into `bumpalo::boxed::Box` because
+        // of how it's `#[repr(transparent)]` but the documentation reccomends doing
+        // it this way instead
+        let chunk_pixels = unsafe {
+            let initialized_pixels = std::mem::transmute::<_, &'bump mut [Pixel]>(chunk_pixels);
+            bumpalo::boxed::Box::from_raw(initialized_pixels)
+        };
 
         Ok(BumpRasterChunk {
             pixels: chunk_pixels,

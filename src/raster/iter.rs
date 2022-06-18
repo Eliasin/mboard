@@ -151,6 +151,12 @@ impl<'a> Iterator for GenericRasterChunkIterator<&'a mut RasterLayer> {
     fn next<'b>(&'b mut self) -> Option<Self::Item> {
         let chunk_rect = self.chunk_rect;
         let chunk_size = self.raster_layer.chunk_size;
+
+        // This transmute is needed to convince the borrow checker that
+        // the lifetime of `chunks` does NOT depend on the lifetime of
+        // the iterator at all, but instead the borrow to `raster_layer`.
+        // This is sound because chunks is just a field of the `raster_layer`
+        // borrow.
         let chunks = unsafe {
             std::mem::transmute::<
                 &'b mut HashMap<ChunkPosition, BoxRasterChunk>,
