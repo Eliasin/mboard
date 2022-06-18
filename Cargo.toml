@@ -8,5 +8,5 @@ edition = "2021"
 [dependencies]
 enum_dispatch = "0.3.8"
 lru = "0.7.5"
-bumpalo = { version = "3.9.1", features = ["boxed", "collections"] }
+bumpalo = { version = "3.10.0", features = ["boxed", "collections"] }
 thiserror = "1.0.31"
