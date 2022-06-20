@@ -179,6 +179,8 @@ impl CanvasView {
         }
     }
 
+    /// Compares equality of scales for two canvas views. Since scales can have some
+    /// rounding, this equality evaluates as true for scales that are "close enough".
     pub fn scale_eq(&self, other: &CanvasView) -> bool {
         let scale = self.canvas_dimensions.relative_scale(self.view_dimensions);
 
@@ -187,6 +189,18 @@ impl CanvasView {
             .relative_scale(other.view_dimensions);
 
         scale.similar_to(other_scale)
+    }
+
+    /// A subview of this view that contains a given canvas rect. The scale of the subview
+    /// is derived from this view.
+    pub fn canvas_rect_subview(&self, canvas_rect: &CanvasRect) -> Option<CanvasView> {
+        let view_rect = self.transform_canvas_rect_to_view(canvas_rect)?;
+
+        Some(CanvasView {
+            top_left: canvas_rect.top_left,
+            canvas_dimensions: canvas_rect.dimensions,
+            view_dimensions: view_rect.dimensions,
+        })
     }
 }
 
@@ -352,7 +366,9 @@ impl Canvas {
         let layers = &mut self.layers;
         let raster = self
             .view_raster_cache
-            .get_chunk_or_rasterize(view, &mut |c| Canvas::rasterize_canvas_rect(layers, *c));
+            .get_chunk_or_rasterize(view, &mut |c| {
+                Canvas::rasterize_canvas_rect_uncached(layers, *c)
+            });
 
         raster.to_chunk()
     }
@@ -365,12 +381,14 @@ impl Canvas {
         let layers = &mut self.layers;
         let raster = self
             .view_raster_cache
-            .get_chunk_or_rasterize(view, &mut |c| Canvas::rasterize_canvas_rect(layers, *c));
+            .get_chunk_or_rasterize(view, &mut |c| {
+                Canvas::rasterize_canvas_rect_uncached(layers, *c)
+            });
 
         raster.to_chunk_into_bump(bump)
     }
 
-    fn rasterize_canvas_rect(
+    fn rasterize_canvas_rect_uncached(
         layers: &mut Vec<LayerImplementation>,
         canvas_rect: CanvasRect,
     ) -> BoxRasterChunk {
@@ -390,16 +408,16 @@ impl Canvas {
         base
     }
 
-    pub fn render_canvas_rect(&mut self, canvas_rect: CanvasRect) -> BoxRasterChunk {
+    pub fn rasterize_canvas_rect(&mut self, canvas_rect: CanvasRect) -> BoxRasterChunk {
         let layers = &mut self.layers;
         self.rect_raster_cache
             .get_chunk_or_rasterize(&canvas_rect, &mut |c| {
-                Canvas::rasterize_canvas_rect(layers, *c)
+                Canvas::rasterize_canvas_rect_uncached(layers, *c)
             })
             .to_chunk()
     }
 
-    pub fn render_canvas_rect_into_bump<'bump>(
+    pub fn rasterize_canvas_rect_into_bump<'bump>(
         &mut self,
         canvas_rect: CanvasRect,
         bump: &'bump Bump,
@@ -407,7 +425,7 @@ impl Canvas {
         let layers = &mut self.layers;
         self.rect_raster_cache
             .get_chunk_or_rasterize(&canvas_rect, &mut |c| {
-                Canvas::rasterize_canvas_rect(layers, *c)
+                Canvas::rasterize_canvas_rect_uncached(layers, *c)
             })
             .to_chunk_into_bump(bump)
     }
@@ -432,11 +450,11 @@ impl Canvas {
                     if let Some(changed_canvas_rect) = changed_canvas_rect {
                         self.rect_raster_cache
                             .rerender_canvas_rect(&changed_canvas_rect, &mut |c| {
-                                Canvas::rasterize_canvas_rect(layers, *c)
+                                Canvas::rasterize_canvas_rect_uncached(layers, *c)
                             });
                         self.view_raster_cache
                             .rerender_canvas_rect(&changed_canvas_rect, &mut |c| {
-                                Canvas::rasterize_canvas_rect(layers, *c)
+                                Canvas::rasterize_canvas_rect_uncached(layers, *c)
                             });
                     }
 
