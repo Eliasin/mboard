@@ -2,7 +2,7 @@ use bumpalo::Bump;
 use std::{mem::MaybeUninit, ops::DerefMut};
 use thiserror::Error;
 
-use crate::raster::{position::Dimensions, Pixel};
+use crate::{primitives::dimensions::Dimensions, raster::Pixel};
 
 use super::{
     raster_chunk::{BumpRasterChunk, RasterChunk},
@@ -53,7 +53,7 @@ impl NearestNeighbourMap {
                     source_dimensions.transform_point((column, row).into(), destination_dimensions);
 
                 let source_index = translate_rect_position_to_flat_index(
-                    nearest.0,
+                    nearest.into(),
                     source_dimensions.width,
                     source_dimensions.height,
                 )
@@ -160,7 +160,8 @@ impl NearestNeighbourMap {
 mod test {
     use crate::{
         assert_raster_eq,
-        raster::{chunks::BoxRasterChunk, position::Dimensions, Pixel},
+        primitives::dimensions::Dimensions,
+        raster::{chunks::BoxRasterChunk, Pixel},
     };
 
     use super::NearestNeighbourMap;
@@ -168,13 +169,7 @@ mod test {
     #[test]
     fn scaling_using_map_is_same_as_without() {
         let gradient_chunk = BoxRasterChunk::new_fill_dynamic(
-            |p| {
-                Pixel::new_rgb_norm(
-                    (1.0 + p.0 .1 as f32) / 3.0,
-                    0.0,
-                    (1.0 + p.0 .0 as f32) / 3.0,
-                )
-            },
+            |p| Pixel::new_rgb_norm((1.0 + p.1 as f32) / 3.0, 0.0, (1.0 + p.0 as f32) / 3.0),
             3,
             3,
         );

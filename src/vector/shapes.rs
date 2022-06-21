@@ -1,10 +1,12 @@
 use std::ops::Mul;
 
-use crate::raster::{
-    chunks::{BoxRasterChunk, RasterWindow},
-    pixels::colors,
-    position::PixelPosition,
-    Pixel,
+use crate::{
+    primitives::position::PixelPosition,
+    raster::{
+        chunks::{BoxRasterChunk, RasterWindow},
+        pixels::colors,
+        Pixel,
+    },
 };
 
 /// A polygon represented as a finite bounding box and
@@ -185,7 +187,7 @@ impl Polygon for Oval {
             half_height * HALF_OVAL_PADDING,
         );
 
-        let (x, y): (f32, f32) = (p.0 .0 as f32 - origin.0, p.0 .1 as f32 - origin.1);
+        let (x, y): (f32, f32) = (p.0 as f32 - origin.0, p.1 as f32 - origin.1);
 
         let dist = f32::sqrt(x.powi(2) / half_width.powi(2) + y.powi(2) / half_height.powi(2));
 
@@ -296,7 +298,7 @@ impl Polygon for LineSegment {
     }
 
     fn inside_proportion(&self, p: &PixelPosition) -> u8 {
-        let p: (i32, i32) = (p.0 .0 as i32, p.0 .1 as i32);
+        let p: (i32, i32) = (p.0 as i32, p.1 as i32);
 
         let factor = (dot_product(p, self.from_origin) as f32)
             / (dot_product(self.from_origin, self.from_origin) as f32);

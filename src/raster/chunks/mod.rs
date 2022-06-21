@@ -21,10 +21,8 @@ mod tests {
     use super::{raster_chunk::BoxRasterChunk, raster_window::*, util::*};
     use crate::{
         assert_raster_eq,
-        raster::{
-            pixels::{colors, Pixel},
-            position::{Dimensions, DrawPosition, PixelPosition},
-        },
+        primitives::dimensions::Dimensions,
+        raster::pixels::{colors, Pixel},
     };
 
     #[test]
@@ -294,11 +292,11 @@ mod tests {
         let checkerboard_chunk = BoxRasterChunk::new_fill_dynamic(
             |p| {
                 let mut is_red = true;
-                if p.0 .0 % 2 == 0 {
+                if p.0 % 2 == 0 {
                     is_red = !is_red;
                 }
 
-                if p.0 .1 % 2 == 0 {
+                if p.1 % 2 == 0 {
                     is_red = !is_red;
                 }
 
@@ -335,13 +333,7 @@ mod tests {
     #[test]
     fn dynamic_fill_gradient() {
         let gradient_chunk = BoxRasterChunk::new_fill_dynamic(
-            |p| {
-                Pixel::new_rgb_norm(
-                    (1.0 + p.0 .1 as f32) / 3.0,
-                    0.0,
-                    (1.0 + p.0 .0 as f32) / 3.0,
-                )
-            },
+            |p| Pixel::new_rgb_norm((1.0 + p.1 as f32) / 3.0, 0.0, (1.0 + p.0 as f32) / 3.0),
             3,
             3,
         );
@@ -411,7 +403,7 @@ mod tests {
     #[test]
     fn scale_up() {
         let mut raster_chunk = BoxRasterChunk::new(10, 10);
-        raster_chunk.fill_rect(colors::red(), DrawPosition::from((0, 0)), 5, 5);
+        raster_chunk.fill_rect(colors::red(), (0, 0).into(), 5, 5);
 
         raster_chunk.nn_scale(Dimensions {
             width: 20,
@@ -419,7 +411,7 @@ mod tests {
         });
 
         let mut expected = BoxRasterChunk::new(20, 20);
-        expected.fill_rect(colors::red(), DrawPosition::from((0, 0)), 10, 10);
+        expected.fill_rect(colors::red(), (0, 0).into(), 10, 10);
 
         assert_raster_eq!(raster_chunk, expected);
     }
@@ -427,7 +419,7 @@ mod tests {
     #[test]
     fn scale_down() {
         let mut raster_chunk = BoxRasterChunk::new(20, 20);
-        raster_chunk.fill_rect(colors::red(), DrawPosition::from((0, 0)), 10, 10);
+        raster_chunk.fill_rect(colors::red(), (0, 0).into(), 10, 10);
 
         raster_chunk.nn_scale(Dimensions {
             width: 10,
@@ -435,7 +427,7 @@ mod tests {
         });
 
         let mut expected = BoxRasterChunk::new(10, 10);
-        expected.fill_rect(colors::red(), DrawPosition::from((0, 0)), 5, 5);
+        expected.fill_rect(colors::red(), (0, 0).into(), 5, 5);
 
         assert_raster_eq!(raster_chunk, expected);
     }
@@ -443,11 +435,11 @@ mod tests {
     #[test]
     fn raster_chunk_shift() {
         let mut raster_a = BoxRasterChunk::new(10, 10);
-        raster_a.fill_rect(colors::red(), DrawPosition((4, 2)), 2, 3);
+        raster_a.fill_rect(colors::red(), (4, 2).into(), 2, 3);
 
         raster_a.horizontal_shift_left(2);
 
-        let shifted_a = RasterWindow::new(&raster_a, PixelPosition((2, 2)), 2, 3)
+        let shifted_a = RasterWindow::new(&raster_a, (2, 2).into(), 2, 3)
             .unwrap()
             .to_chunk();
 
@@ -455,11 +447,11 @@ mod tests {
         assert_raster_eq!(shifted_a, expected_a);
 
         let mut raster_b = BoxRasterChunk::new(10, 10);
-        raster_b.fill_rect(colors::blue(), DrawPosition((3, 4)), 1, 4);
+        raster_b.fill_rect(colors::blue(), (3, 4).into(), 1, 4);
 
         raster_b.horizontal_shift_right(2);
 
-        let shifted_b = RasterWindow::new(&raster_b, PixelPosition((5, 4)), 1, 4)
+        let shifted_b = RasterWindow::new(&raster_b, (5, 4).into(), 1, 4)
             .unwrap()
             .to_chunk();
 
@@ -467,11 +459,11 @@ mod tests {
         assert_raster_eq!(shifted_b, expected_b);
 
         let mut raster_c = BoxRasterChunk::new(10, 10);
-        raster_c.fill_rect(colors::green(), DrawPosition((1, 2)), 2, 4);
+        raster_c.fill_rect(colors::green(), (1, 2).into(), 2, 4);
 
         raster_c.vertical_shift_down(3);
 
-        let shifted_c = RasterWindow::new(&raster_c, PixelPosition((1, 5)), 2, 4)
+        let shifted_c = RasterWindow::new(&raster_c, (1, 5).into(), 2, 4)
             .unwrap()
             .to_chunk();
 
@@ -479,11 +471,11 @@ mod tests {
         assert_raster_eq!(shifted_c, expected_c);
 
         let mut raster_d = BoxRasterChunk::new(10, 10);
-        raster_d.fill_rect(colors::white(), DrawPosition((6, 8)), 3, 1);
+        raster_d.fill_rect(colors::white(), (6, 8).into(), 3, 1);
 
         raster_d.vertical_shift_up(3);
 
-        let shifted_d = RasterWindow::new(&raster_d, PixelPosition((6, 5)), 3, 1)
+        let shifted_d = RasterWindow::new(&raster_d, (6, 5).into(), 3, 1)
             .unwrap()
             .to_chunk();
 

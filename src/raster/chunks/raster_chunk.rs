@@ -7,10 +7,12 @@ use std::{
 
 use bumpalo::Bump;
 
-use crate::raster::{
-    pixels::colors,
-    position::{Dimensions, DrawPosition, PixelPosition},
-    Pixel,
+use crate::{
+    primitives::{
+        dimensions::Dimensions,
+        position::{DrawPosition, PixelPosition, Position, UncheckedIntoPosition},
+    },
+    raster::{pixels::colors, Pixel},
 };
 
 use super::{
@@ -42,7 +44,7 @@ impl<T: Deref<Target = [Pixel]>> Display for RasterChunk<T> {
 impl<T: Deref<Target = [Pixel]>> IndexableByPosition for RasterChunk<T> {
     fn get_index_from_position(&self, position: PixelPosition) -> Option<usize> {
         translate_rect_position_to_flat_index(
-            position.0,
+            position.into(),
             self.dimensions.width,
             self.dimensions.height,
         )
@@ -59,7 +61,7 @@ impl<T: Deref<Target = [Pixel]>> IndexableByPosition for RasterChunk<T> {
         let bounded_position = self.bound_position(position);
 
         let index = translate_rect_position_to_flat_index(
-            bounded_position.0,
+            bounded_position.into(),
             self.dimensions.width,
             self.dimensions.height,
         )
@@ -67,18 +69,17 @@ impl<T: Deref<Target = [Pixel]>> IndexableByPosition for RasterChunk<T> {
 
         BoundedIndex {
             index,
-            x_delta: TryInto::<i64>::try_into(bounded_position.0 .0).unwrap() - position.0 .0,
-            y_delta: TryInto::<i64>::try_into(bounded_position.0 .1).unwrap() - position.0 .1,
+            x_delta: bounded_position.0 as i32 - position.0,
+            y_delta: bounded_position.1 as i32 - position.1,
         }
     }
 
     fn bound_position(&self, position: DrawPosition) -> PixelPosition {
-        PixelPosition((
-            (TryInto::<usize>::try_into(position.0 .0.max(0)).unwrap())
-                .min(self.dimensions.width - 1),
-            (TryInto::<usize>::try_into(position.0 .1.max(0)).unwrap())
-                .min(self.dimensions.height - 1),
-        ))
+        (
+            position.0.min(self.dimensions.width as i32 - 1).max(0),
+            position.1.min(self.dimensions.height as i32 - 1).max(0),
+        )
+            .unchecked_into_position()
     }
 }
 
@@ -108,10 +109,12 @@ impl<T: Deref<Target = [Pixel]>> RasterChunk<T> {
 
         let source_top_left_in_dest = self.get_index_from_bounded_position(dest_position);
 
-        let bottom_right: (i64, i64) = (
+        let bottom_right = (
             (source.dimensions().width - 1).try_into().unwrap(),
             (source.dimensions().height - 1).try_into().unwrap(),
-        );
+        )
+            .into();
+
         let source_bottom_right_in_dest =
             self.get_index_from_bounded_position(dest_position + bottom_right);
 
@@ -158,11 +161,13 @@ impl<T: DerefMut<Target = [Pixel]>> RasterChunk<T> {
             }
 
             let start = self
-                .get_index_from_bounded_position(dest_position + (0_i64, row_num as i64))
+                .get_index_from_bounded_position(dest_position + (0_i32, row_num as i32).into())
                 .index;
 
             let end = self
-                .get_index_from_bounded_position(dest_position + (width as i64 - 1, row_num as i64))
+                .get_index_from_bounded_position(
+                    dest_position + (width as i32 - 1, row_num as i32).into(),
+                )
                 .index;
 
             let dest_slice = &mut self.pixels[start..end + 1];
@@ -184,10 +189,10 @@ impl<T: DerefMut<Target = [Pixel]>> RasterChunk<T> {
             for row_num in 0..shrunk_source.dimensions().height {
                 let source_row = shrunk_source.get_row_slice(row_num);
 
-                let row_start_position = bounded_top_left + (0_usize, row_num);
+                let row_start_position = bounded_top_left + (0_usize, row_num).into();
                 let row_start_index = self.get_index_from_position(row_start_position).unwrap();
                 let row_end_position =
-                    bounded_top_left + (shrunk_source.dimensions().width - 1, row_num);
+                    bounded_top_left + (shrunk_source.dimensions().width - 1, row_num).into();
                 let row_end_index = self.get_index_from_position(row_end_position).unwrap();
 
                 if let Some(source_row) = source_row {
@@ -364,7 +369,7 @@ impl BoxRasterChunk {
 
         for row in 0..height {
             for column in 0..width {
-                let source_position = (column + position.0 .0, row + position.0 .1);
+                let source_position = (column + position.0, row + position.1);
 
                 if let Some(source_index) = self.get_index_from_position(source_position.into()) {
                     rect.push(self.pixels[source_index]);
@@ -489,7 +494,7 @@ impl BoxRasterChunk {
     ) -> BumpRasterChunk<'bump> {
         let mut new_chunk = BumpRasterChunk::new(new_size.width, new_size.height, bump);
 
-        for PixelPosition((column, row)) in new_size.iter_pixels() {
+        for Position::<usize>(column, row) in new_size.iter_pixels() {
             let nearest = self
                 .dimensions
                 .transform_point((column, row).into(), new_size);
@@ -566,7 +571,7 @@ impl<'bump> BumpRasterChunk<'bump> {
     ) -> BumpRasterChunk<'other_bump> {
         let mut new_chunk = BumpRasterChunk::new(new_size.width, new_size.height, bump);
 
-        for PixelPosition((column, row)) in new_size.iter_pixels() {
+        for Position::<usize>(column, row) in new_size.iter_pixels() {
             let nearest = self
                 .dimensions
                 .transform_point((column, row).into(), new_size);
@@ -640,7 +645,7 @@ impl RcRasterChunk {
 
         for row in 0..height {
             for column in 0..width {
-                let source_position = (column + position.0 .0, row + position.0 .1);
+                let source_position = (column + position.0, row + position.1);
 
                 if let Some(source_index) = self.get_index_from_position(source_position.into()) {
                     rect.push(self.pixels[source_index]);

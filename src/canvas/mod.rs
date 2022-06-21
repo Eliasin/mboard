@@ -1,9 +1,14 @@
-use crate::raster::{
-    chunks::{nn_map::NearestNeighbourMap, raster_chunk::BumpRasterChunk, BoxRasterChunk},
-    layer::ChunkPosition,
-    pixels::colors,
-    position::{Dimensions, PixelPosition, Scale},
-    RasterLayer, RasterLayerAction,
+use crate::{
+    primitives::{
+        dimensions::{Dimensions, Scale},
+        position::{CanvasPosition, PixelPosition, UncheckedIntoPosition},
+        rect::{CanvasRect, ViewRect},
+    },
+    raster::{
+        chunks::{nn_map::NearestNeighbourMap, raster_chunk::BumpRasterChunk, BoxRasterChunk},
+        pixels::colors,
+        RasterLayer, RasterLayerAction,
+    },
 };
 use bumpalo::Bump;
 use enum_dispatch::enum_dispatch;
@@ -12,46 +17,6 @@ mod cache;
 pub use cache::ShapeCache;
 
 use self::cache::{CanvasRectRasterCache, CanvasViewRasterCache};
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct CanvasPosition(pub (i64, i64));
-
-impl CanvasPosition {
-    /// Get a point in the canvas from a view and an offset to the view.
-    pub fn from_view_position(view: CanvasView, p: PixelPosition) -> CanvasPosition {
-        CanvasPosition((
-            view.top_left.0 .0 + p.0 .0 as i64,
-            view.top_left.0 .1 + p.0 .1 as i64,
-        ))
-    }
-
-    /// Translate a canvas position by an offset.
-    pub fn translate(&self, offset: (i64, i64)) -> CanvasPosition {
-        CanvasPosition((self.0 .0 + offset.0, self.0 .1 + offset.1))
-    }
-
-    /// Translate a canvas position by some portion of an offset.
-    pub fn translate_scaled(&self, offset: (i64, i64), divisor: i64) -> CanvasPosition {
-        self.translate((offset.0 / divisor, offset.1 / divisor))
-    }
-
-    /// The chunk containing a canvas position.
-    pub fn containing_chunk(&self, chunk_size: usize) -> ChunkPosition {
-        ChunkPosition((
-            self.0 .0.div_floor(chunk_size as i64),
-            self.0 .1.div_floor(chunk_size as i64),
-        ))
-    }
-
-    /// Where the `CanvasPosition` relative to the containing chunk.
-    pub fn position_in_containing_chunk(&self, chunk_size: usize) -> PixelPosition {
-        let containing_chunk = self.containing_chunk(chunk_size);
-        PixelPosition((
-            (self.0 .0 - containing_chunk.0 .0 * chunk_size as i64) as usize,
-            (self.0 .1 - containing_chunk.0 .1 * chunk_size as i64) as usize,
-        ))
-    }
-}
 
 /// A view positioned relative to a set of layers.
 /// The view has a scale and a width and height, the width and height are in pixel units.
@@ -67,14 +32,14 @@ impl CanvasView {
     /// is at the origin with an effective scale of 1.
     pub fn new(width: usize, height: usize) -> CanvasView {
         CanvasView {
-            top_left: CanvasPosition((0, 0)),
+            top_left: (0, 0).into(),
             view_dimensions: Dimensions { width, height },
             canvas_dimensions: Dimensions { width, height },
         }
     }
 
     /// Translate a view by an offset.
-    pub fn translate(&mut self, d: (i64, i64)) {
+    pub fn translate(&mut self, d: CanvasPosition) {
         self.top_left = self.top_left.translate(d);
     }
 
@@ -82,7 +47,7 @@ impl CanvasView {
     pub fn pin_resize_canvas(&mut self, d: Dimensions) {
         let difference = self.canvas_dimensions.difference(d);
 
-        self.top_left = self.top_left.translate_scaled(difference, 2);
+        self.top_left = self.top_left.translate_scaled(difference.into(), 2);
         self.canvas_dimensions = d;
     }
 
@@ -114,7 +79,7 @@ impl CanvasView {
 
         let difference = self.canvas_dimensions.difference(new_canvas_dimensions);
 
-        self.top_left = self.top_left.translate_scaled(difference, 2);
+        self.top_left = self.top_left.translate_scaled(difference.into(), 2);
         self.canvas_dimensions = new_canvas_dimensions;
         self.view_dimensions = new_view_dimensions;
     }
@@ -125,25 +90,22 @@ impl CanvasView {
             .canvas_dimensions
             .transform_point(p, self.view_dimensions);
 
-        CanvasPosition::from_view_position(*self, scaled_point)
+        (self.top_left + scaled_point.unchecked_into_position()).into()
     }
 
     /// Attempt to transform a position in canvas space to a position
     /// in view space. Canvas positions not in view will map to `None`;
     pub fn transform_canvas_to_view(&self, p: CanvasPosition) -> Option<PixelPosition> {
-        let translated_point = p.translate((-self.top_left.0 .0, -self.top_left.0 .1));
+        let translated_point = p.translate((-self.top_left.0, -self.top_left.1).into());
 
-        let point_past_top_left = translated_point.0 .0 < 0 || translated_point.0 .1 < 0;
-        let point_past_bottom_right = translated_point.0 .0 > self.canvas_dimensions.width as i64
-            || translated_point.0 .1 > self.canvas_dimensions.height as i64;
+        let point_past_top_left = translated_point.0 < 0 || translated_point.1 < 0;
+        let point_past_bottom_right = translated_point.0 > self.canvas_dimensions.width as i32
+            || translated_point.1 > self.canvas_dimensions.height as i32;
         if point_past_top_left || point_past_bottom_right {
             None
         } else {
             Some(self.view_dimensions.transform_point(
-                PixelPosition((
-                    translated_point.0 .0 as usize,
-                    translated_point.0 .1 as usize,
-                )),
+                translated_point.unchecked_into_position(),
                 self.canvas_dimensions,
             ))
         }
@@ -155,7 +117,7 @@ impl CanvasView {
         let top_left = self.transform_canvas_to_view(r.top_left)?;
         let bottom_right = self.transform_canvas_to_view(r.bottom_right())?;
 
-        Some(ViewRect::new_points(top_left, bottom_right))
+        Some(ViewRect::from_points(top_left, bottom_right))
     }
 
     /// Transform a rect in view space to a rect in canvas space.
@@ -163,7 +125,7 @@ impl CanvasView {
         let top_left = self.transform_view_to_canvas(r.top_left);
         let bottom_right = self.transform_view_to_canvas(r.bottom_right());
 
-        CanvasRect::new_points(top_left, bottom_right)
+        CanvasRect::from_points(top_left, bottom_right)
     }
 
     /// Create a `NearestNeighbourMap` for the transformation from the canvas
@@ -203,132 +165,6 @@ impl CanvasView {
         })
     }
 }
-
-/// A rectangle within a view configuration.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct ViewRect {
-    pub top_left: PixelPosition,
-    pub dimensions: Dimensions,
-}
-
-impl ViewRect {
-    /// A view rect defined by two points.
-    pub fn new_points(a: PixelPosition, b: PixelPosition) -> ViewRect {
-        let top_left = (a.0 .0.min(b.0 .0), a.0 .1.min(b.0 .1));
-        let bottom_right = (a.0 .0.max(b.0 .0), a.0 .1.max(b.0 .1));
-
-        ViewRect {
-            top_left: PixelPosition(top_left),
-            dimensions: Dimensions {
-                width: bottom_right.0 - top_left.0,
-                height: bottom_right.1 - top_left.1,
-            },
-        }
-    }
-
-    /// The bottom right of a view rect.
-    pub fn bottom_right(&self) -> PixelPosition {
-        self.top_left
-            .translate((self.dimensions.width, self.dimensions.height))
-    }
-}
-
-/// A rectangle in canvas-space that can be used for operations
-/// on layers.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct CanvasRect {
-    pub top_left: CanvasPosition,
-    pub dimensions: Dimensions,
-}
-
-impl CanvasRect {
-    pub fn new_points(a: CanvasPosition, b: CanvasPosition) -> CanvasRect {
-        let top_left = (a.0 .0.min(b.0 .0), a.0 .1.min(b.0 .1));
-        let bottom_right = (a.0 .0.max(b.0 .0), a.0 .1.max(b.0 .1));
-
-        CanvasRect {
-            top_left: CanvasPosition(top_left),
-            dimensions: Dimensions {
-                width: (bottom_right.0 - top_left.0) as usize,
-                height: (bottom_right.1 - top_left.1) as usize,
-            },
-        }
-    }
-
-    pub fn at_origin(width: usize, height: usize) -> CanvasRect {
-        CanvasRect {
-            top_left: CanvasPosition((0, 0)),
-            dimensions: Dimensions { width, height },
-        }
-    }
-
-    /// A rect that contains both this `CanvasRect` and `other`.
-    pub fn spanning_rect(&self, other: &CanvasRect) -> CanvasRect {
-        let top = self.top_left.0 .1.min(other.top_left.0 .1);
-        let left = self.top_left.0 .0.min(other.top_left.0 .0);
-
-        let bottom_right = self.bottom_right();
-        let other_bottom_right = other.bottom_right();
-
-        let bottom = bottom_right.0 .1.max(other_bottom_right.0 .1);
-        let right = bottom_right.0 .0.max(other_bottom_right.0 .0);
-
-        CanvasRect {
-            top_left: CanvasPosition((left, top)),
-            dimensions: Dimensions {
-                width: (right - left) as usize,
-                height: (bottom - top) as usize,
-            },
-        }
-    }
-
-    /// The bottom right of a canvas rect.
-    pub fn bottom_right(&self) -> CanvasPosition {
-        self.top_left
-            .translate((self.dimensions.width as i64, self.dimensions.height as i64))
-    }
-
-    /// Whether or not this canvas rect fully contains another.
-    pub fn contains(&self, other: &CanvasRect) -> bool {
-        self.contains_with_offset(other).is_some()
-    }
-
-    /// The offset of a contained rect to this rect.
-    pub fn contains_with_offset(&self, other: &CanvasRect) -> Option<PixelPosition> {
-        if self.top_left.0 .0 > other.top_left.0 .0 || self.top_left.0 .1 > other.top_left.0 .1 {
-            None
-        } else {
-            let bottom_right = self.bottom_right();
-            let other_bottom_right = other.bottom_right();
-
-            if bottom_right.0 .0 < other_bottom_right.0 .0
-                || bottom_right.0 .1 < other_bottom_right.0 .1
-            {
-                None
-            } else {
-                Some(PixelPosition::from((
-                    other.top_left.0 .0.abs_diff(self.top_left.0 .0) as usize,
-                    other.top_left.0 .1.abs_diff(self.top_left.0 .1) as usize,
-                )))
-            }
-        }
-    }
-
-    /// Expands `self` in all directions by `margin`.
-    pub fn expand(&self, margin: usize) -> CanvasRect {
-        let margin_i64 = margin as i64;
-
-        let mut new_rect = *self;
-        new_rect.top_left = new_rect.top_left.translate((-margin_i64, -margin_i64));
-        new_rect.dimensions = Dimensions {
-            width: self.dimensions.width + margin * 2,
-            height: self.dimensions.height + margin * 2,
-        };
-
-        new_rect
-    }
-}
-
 /// A logical layer in the canvas. Layers can be composited ontop of eachother.
 #[enum_dispatch]
 pub enum LayerImplementation {
@@ -470,39 +306,30 @@ impl Canvas {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::raster::{chunks::IndexableByPosition, Pixel, RasterLayerAction};
+    use crate::{
+        primitives::rect::ViewRect,
+        raster::{chunks::IndexableByPosition, Pixel, RasterLayerAction},
+    };
 
     #[test]
     fn transform_view_to_canvas() {
         let mut view = CanvasView::new(10, 10);
 
-        view.translate((-5, -5));
-        assert_eq!(
-            view.transform_view_to_canvas(PixelPosition((5, 5))),
-            CanvasPosition((0, 0))
-        );
-        assert_eq!(
-            view.transform_view_to_canvas(PixelPosition((0, 5))),
-            CanvasPosition((-5, 0))
-        );
+        view.translate((-5, -5).into());
+        assert_eq!(view.transform_view_to_canvas((5, 5).into()), (0, 0).into());
+        assert_eq!(view.transform_view_to_canvas((0, 5).into()), (-5, 0).into());
 
-        view.translate((5, 5));
+        view.translate((5, 5).into());
         view.canvas_dimensions = Dimensions {
             width: 20,
             height: 20,
         };
+        assert_eq!(view.transform_view_to_canvas((0, 1).into()), (0, 2).into());
         assert_eq!(
-            view.transform_view_to_canvas(PixelPosition((0, 1))),
-            CanvasPosition((0, 2))
+            view.transform_view_to_canvas((5, 5).into()),
+            (10, 10).into()
         );
-        assert_eq!(
-            view.transform_view_to_canvas(PixelPosition((5, 5))),
-            CanvasPosition((10, 10))
-        );
-        assert_eq!(
-            view.transform_view_to_canvas(PixelPosition((5, 1))),
-            CanvasPosition((10, 2))
-        );
+        assert_eq!(view.transform_view_to_canvas((5, 1).into()), (10, 2).into());
     }
 
     #[test]
@@ -512,14 +339,14 @@ mod tests {
         let mut blue_layer = RasterLayer::new(128);
 
         let quarter = CanvasRect {
-            top_left: CanvasPosition((0, 0)),
+            top_left: (0, 0).into(),
             dimensions: Dimensions {
                 width: 64,
                 height: 64,
             },
         };
         let rect = CanvasRect {
-            top_left: CanvasPosition((0, 0)),
+            top_left: (0, 0).into(),
             dimensions: Dimensions {
                 width: 128,
                 height: 128,
@@ -554,10 +381,10 @@ mod tests {
     #[test]
     fn view_rect_conversion_easy() {
         let mut view = CanvasView::new(10, 15);
-        view.translate((5, 5));
+        view.translate((5, 5).into());
 
         let canvas_rect = CanvasRect {
-            top_left: CanvasPosition((10, 10)),
+            top_left: (10, 10).into(),
             dimensions: Dimensions {
                 width: 5,
                 height: 10,
@@ -567,7 +394,7 @@ mod tests {
         assert_eq!(
             view.transform_canvas_rect_to_view(&canvas_rect),
             Some(ViewRect {
-                top_left: PixelPosition((5, 5)),
+                top_left: (5, 5).into(),
                 dimensions: Dimensions {
                     width: 5,
                     height: 10
@@ -585,7 +412,7 @@ mod tests {
         };
 
         let canvas_rect = CanvasRect {
-            top_left: CanvasPosition((12, 10)),
+            top_left: (12, 10).into(),
             dimensions: Dimensions {
                 width: 8,
                 height: 10,
@@ -595,7 +422,7 @@ mod tests {
         assert_eq!(
             view.transform_canvas_rect_to_view(&canvas_rect),
             Some(ViewRect {
-                top_left: PixelPosition((6, 5)),
+                top_left: (6, 5).into(),
                 dimensions: Dimensions {
                     width: 4,
                     height: 5
@@ -607,7 +434,7 @@ mod tests {
     #[test]
     fn spanning_canvas_rect() {
         let rect_a = CanvasRect {
-            top_left: CanvasPosition((3, 4)),
+            top_left: (3, 4).into(),
             dimensions: Dimensions {
                 width: 2,
                 height: 6,
@@ -615,7 +442,7 @@ mod tests {
         };
 
         let rect_b = CanvasRect {
-            top_left: CanvasPosition((5, 8)),
+            top_left: (5, 8).into(),
             dimensions: Dimensions {
                 width: 1,
                 height: 2,
@@ -625,7 +452,7 @@ mod tests {
         assert_eq!(
             rect_a.spanning_rect(&rect_b),
             CanvasRect {
-                top_left: CanvasPosition((3, 4)),
+                top_left: (3, 4).into(),
                 dimensions: Dimensions {
                     width: 3,
                     height: 6
@@ -634,7 +461,7 @@ mod tests {
         );
 
         let rect_c = CanvasRect {
-            top_left: CanvasPosition((9, 2)),
+            top_left: (9, 2).into(),
             dimensions: Dimensions {
                 width: 3,
                 height: 5,
@@ -642,7 +469,7 @@ mod tests {
         };
 
         let rect_d = CanvasRect {
-            top_left: CanvasPosition((10, 1)),
+            top_left: (10, 1).into(),
             dimensions: Dimensions {
                 width: 3,
                 height: 7,
@@ -652,7 +479,7 @@ mod tests {
         assert_eq!(
             rect_c.spanning_rect(&rect_d),
             CanvasRect {
-                top_left: CanvasPosition((9, 1)),
+                top_left: (9, 1).into(),
                 dimensions: Dimensions {
                     width: 4,
                     height: 7
@@ -664,33 +491,27 @@ mod tests {
     #[test]
     fn canvas_rect_containment() {
         let rect_a = CanvasRect {
-            top_left: CanvasPosition((-5, -10)),
+            top_left: (-5, -1).into(),
             dimensions: Dimensions {
                 width: 10,
                 height: 20,
             },
         };
 
-        assert_eq!(
-            rect_a.contains_with_offset(&rect_a),
-            Some(PixelPosition::from((0, 0)))
-        );
+        assert_eq!(rect_a.contains_with_offset(&rect_a), Some((0, 0).into()));
 
         let rect_b = CanvasRect {
-            top_left: CanvasPosition((0, 0)),
+            top_left: (0, 0).into(),
             dimensions: Dimensions {
                 width: 5,
                 height: 5,
             },
         };
 
-        assert_eq!(
-            rect_a.contains_with_offset(&rect_b),
-            Some(PixelPosition::from((5, 10)))
-        );
+        assert_eq!(rect_a.contains_with_offset(&rect_b), Some((5, 1).into()));
 
         let rect_c = CanvasRect {
-            top_left: CanvasPosition((4, 9)),
+            top_left: (4, 9).into(),
             dimensions: Dimensions {
                 width: 1,
                 height: 1,
@@ -699,11 +520,11 @@ mod tests {
 
         assert_eq!(
             rect_a.contains_with_offset(&rect_c),
-            Some(PixelPosition::from((9, 19)))
+            Some(PixelPosition::from((9, 10)))
         );
 
         let rect_d = CanvasRect {
-            top_left: CanvasPosition((5, 10)),
+            top_left: (5, 10).into(),
             dimensions: Dimensions {
                 width: 1,
                 height: 1,
@@ -716,7 +537,7 @@ mod tests {
     #[test]
     fn canvas_rect_expansion() {
         let canvas_rect = CanvasRect {
-            top_left: CanvasPosition((0, 0)),
+            top_left: (0, 0).into(),
             dimensions: Dimensions {
                 width: 64,
                 height: 64,
@@ -726,7 +547,7 @@ mod tests {
         let expanded_a = canvas_rect.expand(canvas_rect.dimensions.largest_dimension());
 
         let expected_a = CanvasRect {
-            top_left: CanvasPosition((-64, -64)),
+            top_left: (-64, -64).into(),
             dimensions: Dimensions {
                 width: 64 * 3,
                 height: (64 * 3),
@@ -739,7 +560,7 @@ mod tests {
     #[test]
     fn view_transform_rect() {
         let canvas_view = CanvasView {
-            top_left: CanvasPosition((-5, -5)),
+            top_left: (-5, -5).into(),
             view_dimensions: Dimensions {
                 width: 10,
                 height: 10,
@@ -751,7 +572,7 @@ mod tests {
         };
 
         let canvas_rect_a = CanvasRect {
-            top_left: CanvasPosition((-5, -5)),
+            top_left: (-5, -5).into(),
             dimensions: Dimensions {
                 width: 5,
                 height: 5,
@@ -761,7 +582,7 @@ mod tests {
         assert_eq!(
             canvas_view.transform_canvas_rect_to_view(&canvas_rect_a),
             Some(ViewRect {
-                top_left: PixelPosition((0, 0)),
+                top_left: (0, 0).into(),
                 dimensions: Dimensions {
                     width: 10,
                     height: 10
@@ -770,7 +591,7 @@ mod tests {
         );
 
         let canvas_view = CanvasView {
-            top_left: CanvasPosition((-10, -10)),
+            top_left: (-10, -10).into(),
             view_dimensions: Dimensions {
                 width: 10,
                 height: 10,
@@ -782,7 +603,7 @@ mod tests {
         };
 
         let canvas_rect_b = CanvasRect {
-            top_left: CanvasPosition((0, 0)),
+            top_left: (0, 0).into(),
             dimensions: Dimensions {
                 width: 10,
                 height: 10,
@@ -792,7 +613,7 @@ mod tests {
         assert_eq!(
             canvas_view.transform_canvas_rect_to_view(&canvas_rect_b),
             Some(ViewRect {
-                top_left: PixelPosition((5, 5)),
+                top_left: (5, 5).into(),
                 dimensions: Dimensions {
                     width: 5,
                     height: 5
@@ -804,7 +625,7 @@ mod tests {
     #[test]
     fn canvas_view_scaling() {
         let canvas_view = CanvasView {
-            top_left: CanvasPosition((10, 10)),
+            top_left: (10, 10).into(),
             view_dimensions: Dimensions {
                 width: 10,
                 height: 10,
@@ -826,7 +647,7 @@ mod tests {
             assert_eq!(
                 canvas_view,
                 CanvasView {
-                    top_left: CanvasPosition((5, 5)),
+                    top_left: (5, 5).into(),
                     view_dimensions: Dimensions {
                         width: 10,
                         height: 10
@@ -850,7 +671,7 @@ mod tests {
             assert_eq!(
                 canvas_view,
                 CanvasView {
-                    top_left: CanvasPosition((12, 12)),
+                    top_left: (12, 12).into(),
                     view_dimensions: Dimensions {
                         width: 10,
                         height: 10
@@ -874,7 +695,7 @@ mod tests {
             assert_eq!(
                 canvas_view,
                 CanvasView {
-                    top_left: CanvasPosition((5, 5)),
+                    top_left: (5, 5).into(),
                     view_dimensions: Dimensions {
                         width: 10,
                         height: 10
@@ -898,7 +719,7 @@ mod tests {
             assert_eq!(
                 canvas_view,
                 CanvasView {
-                    top_left: CanvasPosition((5, 5)),
+                    top_left: (5, 5).into(),
                     view_dimensions: Dimensions {
                         width: 20,
                         height: 20

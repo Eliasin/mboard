@@ -1,11 +1,12 @@
 use lru::LruCache;
 
 use crate::{
-    raster::{
-        chunks::{
-            nn_map::NearestNeighbourMap, raster_chunk::RcRasterChunk, BoxRasterChunk, RasterWindow,
-        },
-        position::{Dimensions, DrawPosition, Scale},
+    primitives::{
+        dimensions::{Dimensions, Scale},
+        position::{DrawPosition, UncheckedIntoPosition},
+    },
+    raster::chunks::{
+        nn_map::NearestNeighbourMap, raster_chunk::RcRasterChunk, BoxRasterChunk, RasterWindow,
     },
     vector::shapes::{Oval, RasterizablePolygon},
 };
@@ -92,7 +93,9 @@ impl CanvasViewRasterCache {
             {
                 let new_chunk =
                     rasterizer(&canvas_rect).nn_scaled(view_rect_needing_rerender.dimensions);
-                let draw_position: DrawPosition = view_rect_needing_rerender.top_left.into();
+                let draw_position: DrawPosition = view_rect_needing_rerender
+                    .top_left
+                    .unchecked_into_position();
 
                 match cached_canvas_raster.cached_chunk.get_mut() {
                     Some(mut cached_chunk) => {
@@ -214,7 +217,7 @@ impl CanvasRectRasterCache {
                 .contains_with_offset(canvas_rect)
             {
                 let new_chunk = rasterizer(canvas_rect);
-                let draw_position: DrawPosition = rect_offset.into();
+                let draw_position: DrawPosition = rect_offset.unchecked_into_position();
 
                 cached_canvas_raster
                     .cached_chunk
@@ -326,24 +329,20 @@ impl Default for NearestNeighbourMapCache {
 
 #[cfg(test)]
 mod tests {
+
     use super::{CachedCanvasRaster, CanvasRectRasterCache, CanvasViewRasterCache};
     use crate::{
         assert_raster_eq,
-        canvas::{CanvasPosition, CanvasRect, CanvasView},
-        raster::{
-            chunks::BoxRasterChunk,
-            pixels::colors,
-            position::PixelPosition,
-            position::{Dimensions, DrawPosition},
-        },
+        canvas::{CanvasRect, CanvasView},
+        primitives::{dimensions::Dimensions, position::UncheckedIntoPosition},
+        raster::{chunks::BoxRasterChunk, pixels::colors},
     };
 
     fn rasterizer_from_chunk(
         raster_chunk: &BoxRasterChunk,
     ) -> impl Fn(&CanvasRect) -> BoxRasterChunk + '_ {
         |rect: &CanvasRect| {
-            let position =
-                PixelPosition((rect.top_left.0 .0 as usize, rect.top_left.0 .1 as usize));
+            let position = (rect.top_left.0, rect.top_left.1).unchecked_into_position();
 
             raster_chunk.clone_square(position, rect.dimensions.width, rect.dimensions.height)
         }
@@ -356,7 +355,7 @@ mod tests {
         let render_chunk = BoxRasterChunk::new_fill(colors::green(), 512, 512);
 
         let canvas_rect = CanvasRect {
-            top_left: CanvasPosition((256, 256)),
+            top_left: (256, 256).into(),
             dimensions: Dimensions {
                 width: 64,
                 height: 64,
@@ -376,7 +375,7 @@ mod tests {
 
         assert_eq!(
             cached_canvas_raster.cached_chunk_position,
-            CanvasPosition((256 - 64, 256 - 64))
+            (256 - 64, 256 - 64).into()
         );
 
         assert_raster_eq!(expected_cached_chunk, cached_chunk);
@@ -390,12 +389,12 @@ mod tests {
         let cached_chunk = BoxRasterChunk::new_fill(colors::red(), 64, 64);
 
         let mut cache = CanvasRectRasterCache(Some(CachedCanvasRaster {
-            cached_chunk_position: CanvasPosition((0, 0)),
+            cached_chunk_position: (0, 0).into(),
             cached_chunk: cached_chunk.clone(),
         }));
 
         let canvas_rect = CanvasRect {
-            top_left: CanvasPosition((0, 0)),
+            top_left: (0, 0).into(),
             dimensions: Dimensions {
                 width: 64,
                 height: 64,
@@ -417,7 +416,7 @@ mod tests {
         let render_chunk = {
             let mut render_chunk = BoxRasterChunk::new(100, 100);
 
-            render_chunk.fill_rect(colors::red(), DrawPosition::from((30, 30)), 40, 40);
+            render_chunk.fill_rect(colors::red(), (30, 30).into(), 40, 40);
 
             render_chunk
         };
@@ -426,7 +425,7 @@ mod tests {
 
         {
             let canvas_view = CanvasView {
-                top_left: CanvasPosition((20, 20)),
+                top_left: (20, 20).into(),
                 view_dimensions: Dimensions {
                     width: 10,
                     height: 10,
@@ -444,7 +443,7 @@ mod tests {
             let expected_chunk = {
                 let mut expected_chunk = BoxRasterChunk::new(10, 10);
 
-                expected_chunk.fill_rect(colors::red(), DrawPosition((5, 5)), 5, 5);
+                expected_chunk.fill_rect(colors::red(), (5, 5).into(), 5, 5);
 
                 expected_chunk
             };
@@ -453,7 +452,7 @@ mod tests {
         }
         {
             let canvas_view = CanvasView {
-                top_left: CanvasPosition((20, 30)),
+                top_left: (20, 30).into(),
                 view_dimensions: Dimensions {
                     width: 5,
                     height: 5,
@@ -471,7 +470,7 @@ mod tests {
             let expected_chunk = {
                 let mut expected_chunk = BoxRasterChunk::new(5, 5);
 
-                expected_chunk.fill_rect(colors::red(), DrawPosition((3, 0)), 2, 5);
+                expected_chunk.fill_rect(colors::red(), (3, 0).into(), 2, 5);
 
                 expected_chunk
             };

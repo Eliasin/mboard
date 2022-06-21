@@ -2,9 +2,12 @@ use std::{fmt::Display, mem::MaybeUninit, ops::Deref};
 
 use bumpalo::Bump;
 
-use crate::raster::{
-    position::{Dimensions, DrawPosition, PixelPosition},
-    Pixel,
+use crate::{
+    primitives::{
+        dimensions::Dimensions,
+        position::{DrawPosition, PixelPosition, UncheckedIntoPosition},
+    },
+    raster::Pixel,
 };
 
 use super::{
@@ -46,8 +49,8 @@ impl<'a> RasterWindow<'a> {
         width: usize,
         height: usize,
     ) -> Option<RasterWindow<'a>> {
-        let over_width = top_left.0 .0 + width > chunk.dimensions().width;
-        let over_height = top_left.0 .1 + height > chunk.dimensions().height;
+        let over_width = top_left.0 + width > chunk.dimensions().width;
+        let over_height = top_left.1 + height > chunk.dimensions().height;
         if over_width || over_height {
             None
         } else {
@@ -100,8 +103,8 @@ impl<'a> RasterWindow<'a> {
         let new_width = self.dimensions.width - right - left;
         let new_height = self.dimensions.height - bottom - top;
 
-        if new_top_left.0 .0 > self.backing_dimensions.width
-            || new_top_left.0 .1 > self.backing_dimensions.height
+        if new_top_left.0 > self.backing_dimensions.width
+            || new_top_left.1 > self.backing_dimensions.height
         {
             return None;
         }
@@ -199,11 +202,11 @@ impl<'a> RasterWindow<'a> {
 
 impl<'a> IndexableByPosition for RasterWindow<'a> {
     fn get_index_from_position(&self, position: PixelPosition) -> Option<usize> {
-        if position.0 .0 > self.dimensions.width || position.0 .1 > self.dimensions.height {
+        if position.0 > self.dimensions.width || position.1 > self.dimensions.height {
             None
         } else {
             translate_rect_position_to_flat_index(
-                (position + self.top_left).0,
+                (position + self.top_left).into(),
                 self.backing_dimensions.width,
                 self.backing_dimensions.height,
             )
@@ -223,7 +226,7 @@ impl<'a> IndexableByPosition for RasterWindow<'a> {
         // Since we bound x and y, this is guaranteed to not panic as long as the total area is
         // not 0.
         let index = translate_rect_position_to_flat_index(
-            (bounded_position + self.top_left).0,
+            (bounded_position + self.top_left).into(),
             self.backing_dimensions.width,
             self.backing_dimensions.height,
         )
@@ -231,17 +234,16 @@ impl<'a> IndexableByPosition for RasterWindow<'a> {
 
         BoundedIndex {
             index,
-            x_delta: TryInto::<i64>::try_into(bounded_position.0 .0).unwrap() - position.0 .0,
-            y_delta: TryInto::<i64>::try_into(bounded_position.0 .1).unwrap() - position.0 .1,
+            x_delta: bounded_position.0 as i32 - position.0,
+            y_delta: bounded_position.1 as i32 - position.1,
         }
     }
 
     fn bound_position(&self, position: DrawPosition) -> PixelPosition {
-        PixelPosition((
-            (TryInto::<usize>::try_into(position.0 .0.max(0)).unwrap())
-                .min(self.dimensions.width - 1),
-            (TryInto::<usize>::try_into(position.0 .1.max(0)).unwrap())
-                .min(self.dimensions.height - 1),
-        ))
+        (
+            position.0.min(self.dimensions.width as i32 - 1).max(0),
+            position.1.min(self.dimensions.height as i32 - 1).max(0),
+        )
+            .unchecked_into_position()
     }
 }

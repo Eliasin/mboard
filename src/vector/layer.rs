@@ -1,4 +1,4 @@
-use crate::canvas::CanvasPosition;
+use crate::primitives::position::CanvasPosition;
 
 use super::shapes::RasterizablePolygon;
 

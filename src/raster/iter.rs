@@ -1,8 +1,12 @@
 use super::{
     chunks::BoxRasterChunk,
-    layer::{ChunkPosition, ChunkRect, ChunkRectPosition},
-    position::{Dimensions, PixelPosition},
+    layer::{ChunkRect, ChunkRectPosition},
     RasterLayer,
+};
+
+use crate::primitives::{
+    dimensions::Dimensions,
+    position::{ChunkPosition, PixelPosition, UncheckedIntoPosition},
 };
 use std::collections::HashMap;
 
@@ -16,7 +20,7 @@ impl PixelPositionIterator {
     pub fn new(dimensions: Dimensions) -> PixelPositionIterator {
         PixelPositionIterator {
             dimensions,
-            current: PixelPosition((0, 0)),
+            current: PixelPosition::from((0, 0)),
         }
     }
 }
@@ -25,12 +29,12 @@ impl Iterator for PixelPositionIterator {
     type Item = PixelPosition;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current.0 .0 >= self.dimensions.width {
-            self.current.0 .0 = 0;
-            self.current.0 .1 += 1;
+        if self.current.0 >= self.dimensions.width {
+            self.current.0 = 0;
+            self.current.1 += 1;
         }
 
-        if self.current.0 .1 >= self.dimensions.height {
+        if self.current.1 >= self.dimensions.height {
             None
         } else {
             Some(self.current)
@@ -88,21 +92,21 @@ impl<'a> Iterator for GenericRasterChunkIterator<&'a RasterLayer> {
         let (x_offset, y_offset) = self.delta;
 
         let width = if chunk_rect.chunk_dimensions.width == 1 {
-            chunk_rect.bottom_right_in_chunk.0 .0 - chunk_rect.top_left_in_chunk.0 .0 + 1
+            chunk_rect.bottom_right_in_chunk.0 - chunk_rect.top_left_in_chunk.0 + 1
         } else if x_offset == 0 {
-            chunk_size - chunk_rect.top_left_in_chunk.0 .0
+            chunk_size - chunk_rect.top_left_in_chunk.0
         } else if x_offset == chunk_rect.chunk_dimensions.width - 1 {
-            chunk_rect.bottom_right_in_chunk.0 .0 + 1
+            chunk_rect.bottom_right_in_chunk.0 + 1
         } else {
             chunk_size
         };
 
         let height = if chunk_rect.chunk_dimensions.height == 1 {
-            chunk_rect.bottom_right_in_chunk.0 .1 - chunk_rect.top_left_in_chunk.0 .1 + 1
+            chunk_rect.bottom_right_in_chunk.1 - chunk_rect.top_left_in_chunk.1 + 1
         } else if y_offset == 0 {
-            chunk_size - chunk_rect.top_left_in_chunk.0 .1
+            chunk_size - chunk_rect.top_left_in_chunk.1
         } else if y_offset == chunk_rect.chunk_dimensions.height - 1 {
-            chunk_rect.bottom_right_in_chunk.0 .1 + 1
+            chunk_rect.bottom_right_in_chunk.1 + 1
         } else {
             chunk_size
         };
@@ -110,18 +114,18 @@ impl<'a> Iterator for GenericRasterChunkIterator<&'a RasterLayer> {
         let x_pixel_offset: usize = if x_offset == 0 {
             0
         } else {
-            chunk_size - chunk_rect.top_left_in_chunk.0 .0 + (chunk_size * (x_offset - 1))
+            chunk_size - chunk_rect.top_left_in_chunk.0 + (chunk_size * (x_offset - 1))
         };
 
         let y_pixel_offset: usize = if y_offset == 0 {
             0
         } else {
-            chunk_size - chunk_rect.top_left_in_chunk.0 .1 + (chunk_size * (y_offset - 1))
+            chunk_size - chunk_rect.top_left_in_chunk.1 + (chunk_size * (y_offset - 1))
         };
 
         let chunk_position = chunk_rect
             .top_left_chunk
-            .translate((x_offset as i64, y_offset as i64));
+            .translate((x_offset, y_offset).unchecked_into_position());
 
         // `unwrap` is ok because chunk_position is constructed to always be within
         // `chunk_rect`.
@@ -176,21 +180,21 @@ impl<'a> Iterator for GenericRasterChunkIterator<&'a mut RasterLayer> {
         let (x_offset, y_offset) = self.delta;
 
         let width = if chunk_rect.chunk_dimensions.width == 1 {
-            chunk_rect.bottom_right_in_chunk.0 .0 - chunk_rect.top_left_in_chunk.0 .0 + 1
+            chunk_rect.bottom_right_in_chunk.0 - chunk_rect.top_left_in_chunk.0 + 1
         } else if x_offset == 0 {
-            chunk_size - chunk_rect.top_left_in_chunk.0 .0
+            chunk_size - chunk_rect.top_left_in_chunk.0
         } else if x_offset == chunk_rect.chunk_dimensions.width - 1 {
-            chunk_rect.bottom_right_in_chunk.0 .0 + 1
+            chunk_rect.bottom_right_in_chunk.0 + 1
         } else {
             chunk_size
         };
 
         let height = if chunk_rect.chunk_dimensions.height == 1 {
-            chunk_rect.bottom_right_in_chunk.0 .1 - chunk_rect.top_left_in_chunk.0 .1 + 1
+            chunk_rect.bottom_right_in_chunk.1 - chunk_rect.top_left_in_chunk.1 + 1
         } else if y_offset == 0 {
-            chunk_size - chunk_rect.top_left_in_chunk.0 .1
+            chunk_size - chunk_rect.top_left_in_chunk.1
         } else if y_offset == chunk_rect.chunk_dimensions.height - 1 {
-            chunk_rect.bottom_right_in_chunk.0 .1 + 1
+            chunk_rect.bottom_right_in_chunk.1 + 1
         } else {
             chunk_size
         };
@@ -198,18 +202,18 @@ impl<'a> Iterator for GenericRasterChunkIterator<&'a mut RasterLayer> {
         let x_pixel_offset: usize = if x_offset == 0 {
             0
         } else {
-            chunk_size - chunk_rect.top_left_in_chunk.0 .0 + (chunk_size * (x_offset - 1))
+            chunk_size - chunk_rect.top_left_in_chunk.0 + (chunk_size * (x_offset - 1))
         };
 
         let y_pixel_offset: usize = if y_offset == 0 {
             0
         } else {
-            chunk_size - chunk_rect.top_left_in_chunk.0 .1 + (chunk_size * (y_offset - 1))
+            chunk_size - chunk_rect.top_left_in_chunk.1 + (chunk_size * (y_offset - 1))
         };
 
         let chunk_position = chunk_rect
             .top_left_chunk
-            .translate((x_offset as i64, y_offset as i64));
+            .translate((x_offset, y_offset).unchecked_into_position());
 
         // `unwrap` is ok because chunk_position is constructed to always be within
         // `chunk_rect`.

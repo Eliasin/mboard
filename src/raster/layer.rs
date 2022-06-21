@@ -2,10 +2,16 @@ use super::{
     chunks::{raster_chunk::BumpRasterChunk, BoxRasterChunk, RasterWindow},
     iter::{RasterChunkIterator, RasterChunkIteratorMut},
     pixels::{colors, Pixel},
-    position::{Dimensions, DrawPosition, PixelPosition},
 };
 use crate::{
-    canvas::{CanvasPosition, CanvasRect, CanvasView, Layer, ShapeCache},
+    canvas::{CanvasView, Layer, ShapeCache},
+    primitives::{
+        dimensions::Dimensions,
+        position::{
+            CanvasPosition, ChunkPosition, DrawPosition, PixelPosition, UncheckedIntoPosition,
+        },
+        rect::CanvasRect,
+    },
     vector::shapes::{Oval, RasterizablePolygon},
 };
 use std::{collections::HashMap, convert::TryInto};
@@ -58,24 +64,6 @@ pub struct ChunkRectPosition {
     pub y_pixel_offset: usize,
 }
 
-/// A poisiton of a chunk within the layer.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct ChunkPosition(pub (i64, i64));
-
-impl ChunkPosition {
-    /// Get the dimension of chunks spanned between this position and another chunk position.
-    pub fn span(&self, other: ChunkPosition) -> Dimensions {
-        Dimensions {
-            width: self.0 .0.abs_diff(other.0 .0) as usize + 1,
-            height: self.0 .1.abs_diff(other.0 .1) as usize + 1,
-        }
-    }
-
-    pub fn translate(&self, v: (i64, i64)) -> ChunkPosition {
-        ChunkPosition((self.0 .0 + v.0, self.0 .1 + v.1))
-    }
-}
-
 /// A rectangle in chunk-space, also denotes where it starts
 /// and ends in the top-left and bottom-right chunks.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -90,31 +78,34 @@ impl ChunkRect {
     /// Get the position most top-left within a chunk that is within the chunk rect.
     /// Returns `None` if the requested position is not within this chunk-rect.
     pub fn top_left_in_chunk(&self, chunk_position: ChunkPosition) -> Option<PixelPosition> {
-        let bottom_right_chunk = self.top_left_chunk.translate((
-            self.chunk_dimensions.width as i64,
-            self.chunk_dimensions.height as i64,
-        ));
+        let bottom_right_chunk = self.top_left_chunk.translate(
+            (
+                self.chunk_dimensions.width as i32,
+                self.chunk_dimensions.height as i32,
+            )
+                .into(),
+        );
 
-        let position_past_top_left = chunk_position.0 .0 < self.top_left_chunk.0 .0
-            || chunk_position.0 .1 < self.top_left_chunk.0 .1;
-        let position_past_bottom_right = chunk_position.0 .0 > bottom_right_chunk.0 .0
-            || chunk_position.0 .1 > bottom_right_chunk.0 .1;
+        let position_past_top_left =
+            chunk_position.0 < self.top_left_chunk.0 || chunk_position.1 < self.top_left_chunk.1;
+        let position_past_bottom_right =
+            chunk_position.0 > bottom_right_chunk.0 || chunk_position.1 > bottom_right_chunk.1;
         if position_past_top_left || position_past_bottom_right {
             None
         } else {
-            let left_in_chunk = if chunk_position.0 .0 == self.top_left_chunk.0 .0 {
-                self.top_left_in_chunk.0 .0
+            let left_in_chunk = if chunk_position.0 == self.top_left_chunk.0 {
+                self.top_left_in_chunk.0
             } else {
                 0
             };
 
-            let top_in_chunk = if chunk_position.0 .1 == self.top_left_chunk.0 .1 {
-                self.top_left_in_chunk.0 .1
+            let top_in_chunk = if chunk_position.1 == self.top_left_chunk.1 {
+                self.top_left_in_chunk.1
             } else {
                 0
             };
 
-            Some(PixelPosition((left_in_chunk, top_in_chunk)))
+            Some((left_in_chunk, top_in_chunk).into())
         }
     }
 }
@@ -130,7 +121,7 @@ impl RasterLayer {
         let top_left_in_chunk = top_left.position_in_containing_chunk(self.chunk_size);
 
         let bottom_right =
-            top_left.translate((dimensions.width as i64 - 1, dimensions.height as i64 - 1));
+            top_left.translate((dimensions.width as i32 - 1, dimensions.height as i32 - 1).into());
         let bottom_right_chunk = bottom_right.containing_chunk(self.chunk_size);
         let bottom_right_in_chunk = bottom_right.position_in_containing_chunk(self.chunk_size);
 
@@ -174,17 +165,17 @@ impl RasterLayer {
                 y_pixel_offset,
             } = chunk_rect_position;
 
-            let pixel_offset: (i64, i64) = (
+            let pixel_offset: (i32, i32) = (
                 x_pixel_offset.try_into().unwrap(),
                 y_pixel_offset.try_into().unwrap(),
             );
 
-            let top_left_in_chunk: (i64, i64) = (
-                top_left_in_chunk.0 .0.try_into().unwrap(),
-                top_left_in_chunk.0 .1.try_into().unwrap(),
+            let top_left_in_chunk: (i32, i32) = (
+                top_left_in_chunk.0.try_into().unwrap(),
+                top_left_in_chunk.1.try_into().unwrap(),
             );
 
-            let top_left_in_chunk: (i64, i64) = (
+            let top_left_in_chunk: (i32, i32) = (
                 top_left_in_chunk.0 - pixel_offset.0,
                 top_left_in_chunk.1 - pixel_offset.1,
             );
@@ -195,7 +186,7 @@ impl RasterLayer {
                 let mut raster_chunk = BoxRasterChunk::new(chunk_size, chunk_size);
                 let chunk_position = chunk_rect
                     .top_left_chunk
-                    .translate((x_chunk_offset as i64, y_chunk_offset as i64));
+                    .translate((x_chunk_offset, y_chunk_offset).unchecked_into_position());
                 raster_chunk.composite_over(source, top_left_in_chunk.into());
                 raster_chunks_need_insert.insert(chunk_position, raster_chunk);
             }
@@ -236,15 +227,19 @@ impl RasterLayer {
 
                     let draw_chunk = BoxRasterChunk::new_fill(pixel, width, height);
                     if let Some(raster_chunk) = raster_chunk {
-                        raster_chunk
-                            .composite_over(&draw_chunk.as_window(), top_left_in_chunk.into());
+                        raster_chunk.composite_over(
+                            &draw_chunk.as_window(),
+                            top_left_in_chunk.unchecked_into_position(),
+                        );
                     } else {
                         let mut raster_chunk = BoxRasterChunk::new(chunk_size, chunk_size);
                         let chunk_position = chunk_rect
                             .top_left_chunk
-                            .translate((x_chunk_offset as i64, y_chunk_offset as i64));
-                        raster_chunk
-                            .composite_over(&draw_chunk.as_window(), top_left_in_chunk.into());
+                            .translate((x_chunk_offset, y_chunk_offset).unchecked_into_position());
+                        raster_chunk.composite_over(
+                            &draw_chunk.as_window(),
+                            top_left_in_chunk.unchecked_into_position(),
+                        );
                         raster_chunks_need_insert.insert(chunk_position, raster_chunk);
                     }
                 }
@@ -297,15 +292,19 @@ impl RasterLayer {
                     let draw_chunk = BoxRasterChunk::new_fill(pixel, width, height);
 
                     if let Some(raster_chunk) = raster_chunk {
-                        raster_chunk
-                            .composite_over(&draw_chunk.as_window(), top_left_in_chunk.into());
+                        raster_chunk.composite_over(
+                            &draw_chunk.as_window(),
+                            top_left_in_chunk.unchecked_into_position(),
+                        );
                     } else {
                         let mut raster_chunk = BoxRasterChunk::new(chunk_size, chunk_size);
                         let chunk_position = chunk_rect
                             .top_left_chunk
-                            .translate((x_chunk_offset as i64, y_chunk_offset as i64));
-                        raster_chunk
-                            .composite_over(&draw_chunk.as_window(), top_left_in_chunk.into());
+                            .translate((x_chunk_offset, y_chunk_offset).unchecked_into_position());
+                        raster_chunk.composite_over(
+                            &draw_chunk.as_window(),
+                            top_left_in_chunk.unchecked_into_position(),
+                        );
                         raster_chunks_need_insert.insert(chunk_position, raster_chunk);
                     }
                 }
@@ -369,10 +368,8 @@ impl Layer for RasterLayer {
             let raster_window =
                 RasterWindow::new(raster_chunk, top_left_in_chunk, width, height).unwrap();
 
-            let x_pixel_offset: i64 = x_pixel_offset.try_into().unwrap();
-            let y_pixel_offset: i64 = y_pixel_offset.try_into().unwrap();
             let draw_position_in_result: DrawPosition =
-                DrawPosition::from((x_pixel_offset, y_pixel_offset));
+                (x_pixel_offset, y_pixel_offset).unchecked_into_position();
 
             raster_result.blit(&raster_window, draw_position_in_result);
         }
@@ -438,10 +435,8 @@ impl Layer for RasterLayer {
             let raster_window =
                 RasterWindow::new(raster_chunk, top_left_in_chunk, width, height).unwrap();
 
-            let x_pixel_offset: i64 = x_pixel_offset.try_into().unwrap();
-            let y_pixel_offset: i64 = y_pixel_offset.try_into().unwrap();
             let draw_position_in_result: DrawPosition =
-                DrawPosition::from((x_pixel_offset, y_pixel_offset));
+                (x_pixel_offset, y_pixel_offset).unchecked_into_position();
 
             raster_result.blit(&raster_window, draw_position_in_result);
         }
@@ -459,12 +454,15 @@ mod tests {
     fn chunk_visibility_easy() {
         let raster_layer = RasterLayer::new(10);
 
-        let mut canvas_rect = CanvasRect::at_origin(10, 10);
+        let mut canvas_rect = CanvasRect::at_origin(Dimensions {
+            width: 10,
+            height: 10,
+        });
 
         assert_eq!(
             raster_layer.find_chunk_rect_in_canvas_rect(canvas_rect),
             ChunkRect {
-                top_left_chunk: ChunkPosition((0, 0)),
+                top_left_chunk: (0, 0).into(),
                 chunk_dimensions: Dimensions {
                     width: 1,
                     height: 1
@@ -474,12 +472,12 @@ mod tests {
             }
         );
 
-        canvas_rect.top_left = CanvasPosition((-5, -2));
+        canvas_rect.top_left = (-5, -2).into();
 
         assert_eq!(
             raster_layer.find_chunk_rect_in_canvas_rect(canvas_rect),
             ChunkRect {
-                top_left_chunk: ChunkPosition((-1, -1)),
+                top_left_chunk: (-1, -1).into(),
                 chunk_dimensions: Dimensions {
                     width: 2,
                     height: 2
@@ -494,13 +492,16 @@ mod tests {
     fn chunk_visibility_medium() {
         let raster_layer = RasterLayer::new(1024);
 
-        let mut canvas_rect = CanvasRect::at_origin(2000, 2000);
-        canvas_rect.top_left = CanvasPosition((-500, -500));
+        let mut canvas_rect = CanvasRect::at_origin(Dimensions {
+            width: 2000,
+            height: 2000,
+        });
+        canvas_rect.top_left = (-500, -500).into();
 
         assert_eq!(
             raster_layer.find_chunk_rect_in_canvas_rect(canvas_rect),
             ChunkRect {
-                top_left_chunk: ChunkPosition((-1, -1)),
+                top_left_chunk: (-1, -1).into(),
                 chunk_dimensions: Dimensions {
                     width: 3,
                     height: 3
@@ -515,13 +516,16 @@ mod tests {
     fn chunk_visibility_hard() {
         let raster_layer = RasterLayer::new(512);
 
-        let mut canvas_rect = CanvasRect::at_origin(2000, 1000);
-        canvas_rect.top_left = CanvasPosition((-500, -1000));
+        let mut canvas_rect = CanvasRect::at_origin(Dimensions {
+            width: 2000,
+            height: 1000,
+        });
+        canvas_rect.top_left = (-500, -1000).into();
 
         assert_eq!(
             raster_layer.find_chunk_rect_in_canvas_rect(canvas_rect),
             ChunkRect {
-                top_left_chunk: ChunkPosition((-1, -2)),
+                top_left_chunk: (-1, -2).into(),
                 chunk_dimensions: Dimensions {
                     width: 4,
                     height: 2
@@ -537,13 +541,11 @@ mod tests {
         let mut raster_layer = RasterLayer::new(10);
 
         let red_chunk = BoxRasterChunk::new_fill(colors::red(), 10, 10);
-        raster_layer
-            .chunks
-            .insert(ChunkPosition((0, 0)), red_chunk.clone());
+        raster_layer.chunks.insert((0, 0).into(), red_chunk.clone());
 
         let mut view = CanvasView::new(10, 10);
 
-        view.translate((-5, 0));
+        view.translate((-5, 0).into());
 
         let mut expected_result = BoxRasterChunk::new(10, 10);
         expected_result.fill_rect(colors::red(), DrawPosition::from((5, 0)), 5, 10);
@@ -559,9 +561,7 @@ mod tests {
 
         let red_chunk = BoxRasterChunk::new_fill(colors::red(), 10, 10);
 
-        raster_layer
-            .chunks
-            .insert(ChunkPosition((0, 0)), red_chunk.clone());
+        raster_layer.chunks.insert((0, 0).into(), red_chunk.clone());
 
         let view = CanvasView::new(11, 11);
 
@@ -581,12 +581,10 @@ mod tests {
         let red_chunk = BoxRasterChunk::new_fill(colors::red(), 10, 10);
         let green_chunk = BoxRasterChunk::new_fill(colors::green(), 10, 10);
 
+        raster_layer.chunks.insert((0, 0).into(), red_chunk.clone());
         raster_layer
             .chunks
-            .insert(ChunkPosition((0, 0)), red_chunk.clone());
-        raster_layer
-            .chunks
-            .insert(ChunkPosition((1, 0)), green_chunk.clone());
+            .insert((1, 0).into(), green_chunk.clone());
 
         let view = CanvasView::new(15, 10);
 
@@ -607,15 +605,13 @@ mod tests {
         let red_chunk = BoxRasterChunk::new_fill(colors::red(), 100, 100);
         let green_chunk = BoxRasterChunk::new_fill(colors::green(), 100, 100);
 
+        raster_layer.chunks.insert((0, 0).into(), red_chunk.clone());
         raster_layer
             .chunks
-            .insert(ChunkPosition((0, 0)), red_chunk.clone());
-        raster_layer
-            .chunks
-            .insert(ChunkPosition((-1, -1)), green_chunk.clone());
+            .insert((-1, -1).into(), green_chunk.clone());
 
         let mut view = CanvasView::new(150, 200);
-        view.translate((-275, -115));
+        view.translate((-275, -115).into());
 
         let mut expected_result = BoxRasterChunk::new(150, 200);
 
@@ -635,7 +631,7 @@ mod tests {
         let mut raster_layer = RasterLayer::new(10);
 
         let rect = CanvasRect {
-            top_left: CanvasPosition((0, 0)),
+            top_left: (0, 0).into(),
             dimensions: Dimensions {
                 width: 10,
                 height: 10,
@@ -658,7 +654,7 @@ mod tests {
         let mut raster_layer = RasterLayer::new(10);
 
         let rect = CanvasRect {
-            top_left: CanvasPosition((0, 0)),
+            top_left: (0, 0).into(),
             dimensions: Dimensions {
                 width: 5,
                 height: 5,
@@ -685,14 +681,14 @@ mod tests {
         let mut raster_layer = RasterLayer::new(10);
 
         let left_rect = CanvasRect {
-            top_left: CanvasPosition((0, 0)),
+            top_left: (0, 0).into(),
             dimensions: Dimensions {
                 width: 5,
                 height: 5,
             },
         };
         let right_rect = CanvasRect {
-            top_left: CanvasPosition((6, 0)),
+            top_left: (6, 0).into(),
             dimensions: Dimensions {
                 width: 5,
                 height: 5,
@@ -722,7 +718,7 @@ mod tests {
     fn scaled_rasterization() {
         let mut raster_layer = RasterLayer::new(20);
         let left_rect = CanvasRect {
-            top_left: CanvasPosition((9, 9)),
+            top_left: (9, 9).into(),
             dimensions: Dimensions {
                 width: 2,
                 height: 2,
@@ -756,7 +752,7 @@ mod tests {
         let view = CanvasView::new(30, 30);
 
         let rect = CanvasRect {
-            top_left: CanvasPosition((10, 10)),
+            top_left: (10, 10).into(),
             dimensions: Dimensions {
                 width: 10,
                 height: 10,
@@ -781,7 +777,7 @@ mod tests {
         let view = CanvasView::new(30, 30);
 
         let rect = CanvasRect {
-            top_left: CanvasPosition((10, 15)),
+            top_left: (10, 15).into(),
             dimensions: Dimensions {
                 width: 10,
                 height: 10,
@@ -806,7 +802,7 @@ mod tests {
         let view = CanvasView::new(60, 60);
 
         let rect = CanvasRect {
-            top_left: CanvasPosition((25, 10)),
+            top_left: (25, 10).into(),
             dimensions: Dimensions {
                 width: 10,
                 height: 10,

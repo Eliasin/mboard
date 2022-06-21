@@ -1,7 +1,6 @@
-use crate::raster::{
-    pixels::colors,
-    position::{DrawPosition, PixelPosition},
-    Pixel,
+use crate::{
+    primitives::position::{DrawPosition, PixelPosition},
+    raster::{pixels::colors, Pixel},
 };
 
 #[macro_export]
@@ -14,8 +13,8 @@ macro_rules! assert_raster_eq {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct BoundedIndex {
     pub index: usize,
-    pub x_delta: i64,
-    pub y_delta: i64,
+    pub x_delta: i32,
+    pub y_delta: i32,
 }
 
 /// A value that can be indexed by `PixelPosition`, providing pixels. It must make sense to get slices representing rows from the value.
