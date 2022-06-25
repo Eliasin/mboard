@@ -57,7 +57,7 @@ impl CanvasViewRasterCache {
             requested_canvas_rect.expand(requested_canvas_rect.dimensions.largest_dimension());
 
         let expanded_view = {
-            let mut t = view.clone();
+            let mut t = *view;
             t.pin_scale(
                 Scale::new(
                     expanded_canvas_rect.dimensions.width as f32
@@ -65,7 +65,10 @@ impl CanvasViewRasterCache {
                     expanded_canvas_rect.dimensions.height as f32
                         / view.canvas_dimensions.height as f32,
                 )
-                .unwrap(),
+                .unwrap_or(Scale {
+                    width_factor: 1.0,
+                    height_factor: 1.0,
+                }),
             );
             t
         };
@@ -73,7 +76,7 @@ impl CanvasViewRasterCache {
         let nn_map = nn_map_cache.get_nn_map_for_view(&expanded_view);
         let raster_chunk = rasterizer(&expanded_view.canvas_rect())
             .nn_scaled_with_map(nn_map)
-            .unwrap();
+            .expect("nn_map should be fetched with size of expanded view");
         CachedScaledCanvasRaster {
             cached_chunk_position: expanded_view.top_left,
             cached_chunk: raster_chunk.into(),
@@ -92,7 +95,7 @@ impl CanvasViewRasterCache {
                 cached_view.transform_canvas_rect_to_view(canvas_rect)
             {
                 let new_chunk =
-                    rasterizer(&canvas_rect).nn_scaled(view_rect_needing_rerender.dimensions);
+                    rasterizer(canvas_rect).nn_scaled(view_rect_needing_rerender.dimensions);
                 let draw_position: DrawPosition = view_rect_needing_rerender
                     .top_left
                     .unchecked_into_position();
@@ -105,7 +108,9 @@ impl CanvasViewRasterCache {
                         cached_canvas_raster.cached_chunk =
                             cached_canvas_raster.cached_chunk.diverge();
 
-                        let mut cached_chunk = cached_canvas_raster.cached_chunk.get_mut().unwrap();
+                        let mut cached_chunk = cached_canvas_raster.cached_chunk.get_mut().expect(
+                            "cached chunk should be initialized above as newly constructed resource",
+                        );
                         cached_chunk.blit(&new_chunk.as_window(), draw_position);
                     }
                 }
@@ -126,11 +131,15 @@ impl CanvasViewRasterCache {
         // it causes, primarily, this one https://github.com/rust-lang/rust/issues/54663
         if view.scale_eq(&cached_canvas_raster.view()) && cached_canvas_raster.has_view_cached(view)
         {
-            cached_canvas_raster.get_window(view).unwrap()
+            cached_canvas_raster
+                .get_window(view)
+                .expect("cached view is checked to contain request")
         } else {
             *cached_canvas_raster =
                 CanvasViewRasterCache::prerender_view_area(view, nn_map_cache, rasterizer);
-            cached_canvas_raster.get_window(view).unwrap()
+            cached_canvas_raster
+                .get_window(view)
+                .expect("newly rendered view should contain request")
         }
     }
 
@@ -237,12 +246,16 @@ impl CanvasRectRasterCache {
         // We don't use an if-let here due to some lifetime issues
         // it causes, primarily, this one https://github.com/rust-lang/rust/issues/54663
         if cached_canvas_raster.has_rect_cached(canvas_rect) {
-            cached_canvas_raster.get_window(canvas_rect).unwrap()
+            cached_canvas_raster
+                .get_window(canvas_rect)
+                .expect("cached canvas rect has been checked to contain request")
         } else {
             *cached_canvas_raster =
                 CanvasRectRasterCache::prerender_canvas_rect_area(canvas_rect, rasterizer);
 
-            cached_canvas_raster.get_window(canvas_rect).unwrap()
+            cached_canvas_raster
+                .get_window(canvas_rect)
+                .expect("newly rendered canvas rect should contain request")
         }
     }
 
@@ -285,7 +298,7 @@ impl CachedCanvasRaster {
                     canvas_rect.dimensions.width,
                     canvas_rect.dimensions.height,
                 )
-                .unwrap()
+                .expect("raster window is checked to contain canvas_rect")
             })
     }
 

@@ -65,7 +65,7 @@ impl<T: Deref<Target = [Pixel]>> IndexableByPosition for RasterChunk<T> {
             self.dimensions.width,
             self.dimensions.height,
         )
-        .unwrap();
+        .expect("position is bounded");
 
         BoundedIndex {
             index,
@@ -110,8 +110,12 @@ impl<T: Deref<Target = [Pixel]>> RasterChunk<T> {
         let source_top_left_in_dest = self.get_index_from_bounded_position(dest_position);
 
         let bottom_right = (
-            (source.dimensions().width - 1).try_into().unwrap(),
-            (source.dimensions().height - 1).try_into().unwrap(),
+            (source.dimensions().width - 1)
+                .try_into()
+                .expect("dimensions are checked to be greater than 0"),
+            (source.dimensions().height - 1)
+                .try_into()
+                .expect("dimensions are checked to be greater than 0"),
         )
             .into();
 
@@ -127,11 +131,21 @@ impl<T: Deref<Target = [Pixel]>> RasterChunk<T> {
             return None;
         }
 
-        let shrink_top = source_top_left_in_dest.y_delta.try_into().unwrap();
-        let shrink_bottom = (-source_bottom_right_in_dest.y_delta).try_into().unwrap();
+        let shrink_top = source_top_left_in_dest
+            .y_delta
+            .try_into()
+            .expect("this y delta is checked to be over 0");
+        let shrink_bottom = (-source_bottom_right_in_dest.y_delta)
+            .try_into()
+            .expect("this y delta is checked to be over 0");
 
-        let shrink_left = source_top_left_in_dest.x_delta.try_into().unwrap();
-        let shrink_right = (-source_bottom_right_in_dest.x_delta).try_into().unwrap();
+        let shrink_left = source_top_left_in_dest
+            .x_delta
+            .try_into()
+            .expect("this x delta is checked to be over 0");
+        let shrink_right = (-source_bottom_right_in_dest.x_delta)
+            .try_into()
+            .expect("this x delta is checked to be under 0");
 
         source.shrink(shrink_top, shrink_bottom, shrink_left, shrink_right)
     }
@@ -190,10 +204,14 @@ impl<T: DerefMut<Target = [Pixel]>> RasterChunk<T> {
                 let source_row = shrunk_source.get_row_slice(row_num);
 
                 let row_start_position = bounded_top_left + (0_usize, row_num).into();
-                let row_start_index = self.get_index_from_position(row_start_position).unwrap();
+                let row_start_index = self
+                    .get_index_from_position(row_start_position)
+                    .expect("position should always be in source by construction");
                 let row_end_position =
                     bounded_top_left + (shrunk_source.dimensions().width - 1, row_num).into();
-                let row_end_index = self.get_index_from_position(row_end_position).unwrap();
+                let row_end_index = self
+                    .get_index_from_position(row_end_position)
+                    .expect("position should always be in source by construction");
 
                 if let Some(source_row) = source_row {
                     let dest_slice = &mut self.pixels[row_start_index..row_end_index + 1];
@@ -333,11 +351,10 @@ impl BoxRasterChunk {
     }
 
     /// Create a new raster chunk where each pixel value is filled in by a closure given the pixel's location.
-    pub fn new_fill_dynamic(
-        f: fn(PixelPosition) -> Pixel,
-        width: usize,
-        height: usize,
-    ) -> BoxRasterChunk {
+    pub fn new_fill_dynamic<F>(f: &mut F, width: usize, height: usize) -> BoxRasterChunk
+    where
+        F: FnMut(PixelPosition) -> Pixel,
+    {
         let mut pixels = vec![colors::transparent(); width * height];
 
         for row in 0..width {
@@ -419,10 +436,13 @@ impl BoxRasterChunk {
                     .dimensions
                     .transform_point((column, row).into(), new_size);
 
-                let source_index = self.get_index_from_position(nearest).unwrap();
+                let source_index = self
+                    .get_index_from_position(nearest)
+                    .expect("transformation source position should be contained in source");
+
                 let new_index = new_chunk
                     .get_index_from_position((column, row).into())
-                    .unwrap();
+                    .expect("transformation source position should be contained in source");
                 new_chunk.pixels[new_index] = self.pixels[source_index];
             }
         }
@@ -440,10 +460,13 @@ impl BoxRasterChunk {
                     .dimensions
                     .transform_point((column, row).into(), new_size);
 
-                let source_index = self.get_index_from_position(nearest).unwrap();
+                let source_index = self
+                    .get_index_from_position(nearest)
+                    .expect("transformation source position should be contained in source");
+
                 let new_index = new_chunk
                     .get_index_from_position((column, row).into())
-                    .unwrap();
+                    .expect("transformation source position should be contained in source");
                 new_chunk.pixels[new_index] = self.pixels[source_index];
             }
         }
@@ -499,10 +522,14 @@ impl BoxRasterChunk {
                 .dimensions
                 .transform_point((column, row).into(), new_size);
 
-            let source_index = self.get_index_from_position(nearest).unwrap();
+            let source_index = self
+                .get_index_from_position(nearest)
+                .expect("transformation source position should be contained in source");
             let new_index = new_chunk
                 .get_index_from_position((column, row).into())
-                .unwrap();
+                .expect(
+                "position should always be contained in new chunk as position should be bounded",
+            );
             new_chunk.pixels[new_index] = self.pixels[source_index];
         }
 
@@ -526,12 +553,7 @@ impl<'bump> BumpRasterChunk<'bump> {
     }
 
     /// Create a new raster chunk filled in with a pixel value.
-    pub fn new_fill<'other_bump>(
-        pixel: Pixel,
-        width: usize,
-        height: usize,
-        bump: &'other_bump Bump,
-    ) -> BumpRasterChunk<'other_bump> {
+    pub fn new_fill(pixel: Pixel, width: usize, height: usize, bump: &Bump) -> BumpRasterChunk {
         let pixels = bumpalo::vec![in bump; pixel; width * height];
 
         BumpRasterChunk {
@@ -541,12 +563,12 @@ impl<'bump> BumpRasterChunk<'bump> {
     }
 
     /// Create a new raster chunk where each pixel value is filled in by a closure given the pixel's location.
-    pub fn new_fill_dynamic<'other_bump>(
+    pub fn new_fill_dynamic(
         f: fn(PixelPosition) -> Pixel,
         width: usize,
         height: usize,
-        bump: &'other_bump Bump,
-    ) -> BumpRasterChunk<'other_bump> {
+        bump: &Bump,
+    ) -> BumpRasterChunk {
         let dimensions = Dimensions { width, height };
         let pixels = bumpalo::boxed::Box::from_iter_in(dimensions.iter_pixels().map(f), bump);
 
@@ -554,11 +576,7 @@ impl<'bump> BumpRasterChunk<'bump> {
     }
 
     /// Create a new raster chunk that is completely transparent.
-    pub fn new<'other_bump>(
-        width: usize,
-        height: usize,
-        bump: &'other_bump Bump,
-    ) -> BumpRasterChunk<'other_bump> {
+    pub fn new(width: usize, height: usize, bump: &Bump) -> BumpRasterChunk {
         BumpRasterChunk::new_fill(colors::transparent(), width, height, bump)
     }
 
@@ -576,10 +594,12 @@ impl<'bump> BumpRasterChunk<'bump> {
                 .dimensions
                 .transform_point((column, row).into(), new_size);
 
-            let source_index = self.get_index_from_position(nearest).unwrap();
+            let source_index = self
+                .get_index_from_position(nearest)
+                .expect("transformation source point should always be contained in source");
             let new_index = new_chunk
                 .get_index_from_position((column, row).into())
-                .unwrap();
+                .expect("position should always be in new chunk as it is bounded");
             new_chunk.pixels[new_index] = self.pixels[source_index];
         }
 

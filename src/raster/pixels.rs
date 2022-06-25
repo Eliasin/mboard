@@ -1,7 +1,5 @@
 //! An RGBA pixel type that supports alpha compositing.
 
-use std::convert::TryInto;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Pixel(pub u32);
 
@@ -45,15 +43,9 @@ impl Pixel {
         let b = (self.0 & 0xFF0000) >> 16;
         let a = (self.0 & 0xFF000000) >> 24;
 
-        (
-            r.try_into().unwrap(),
-            g.try_into().unwrap(),
-            b.try_into().unwrap(),
-            a.try_into().unwrap(),
-        )
+        (r as u8, g as u8, b as u8, a as u8)
     }
 
-    #[inline(always)]
     fn as_rgba_u32(&self) -> (u32, u32, u32, u32) {
         let r = self.0 & 0xFF;
         let g = (self.0 & 0xFF00) >> 8;
@@ -75,12 +67,10 @@ impl Pixel {
         )
     }
 
-    #[inline(always)]
     fn composite_alpha(a1: u32, a2: u32) -> u32 {
         (a1 + a2 - ((a1 * a2) >> 8)).min(255)
     }
 
-    #[inline(always)]
     fn composite_component(c1: u32, a1: u32, c2: u32, a2: u32, a_o: u32) -> u32 {
         if a_o == 0 {
             return 255;

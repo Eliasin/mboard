@@ -83,7 +83,10 @@ pub fn get_color_character_for_pixel(p: &Pixel) -> &'static str {
         d_a.partial_cmp(&d_b).unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    color_characters.get(0).unwrap().1
+    color_characters
+        .get(0)
+        .expect("color character array should never be empty")
+        .1
 }
 
 pub fn display_raster_row(row: &[Pixel]) -> String {

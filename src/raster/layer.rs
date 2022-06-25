@@ -14,7 +14,7 @@ use crate::{
     },
     vector::shapes::{Oval, RasterizablePolygon},
 };
-use std::{collections::HashMap, convert::TryInto};
+use std::collections::HashMap;
 
 /// A layer made of raw pixel data. All layers will eventually
 /// be composited onto a raster layer for presentation.
@@ -165,17 +165,12 @@ impl RasterLayer {
                 y_pixel_offset,
             } = chunk_rect_position;
 
-            let pixel_offset: (i32, i32) = (
-                x_pixel_offset.try_into().unwrap(),
-                y_pixel_offset.try_into().unwrap(),
-            );
+            let pixel_offset: (i32, i32) = (x_pixel_offset as i32, y_pixel_offset as i32);
 
-            let top_left_in_chunk: (i32, i32) = (
-                top_left_in_chunk.0.try_into().unwrap(),
-                top_left_in_chunk.1.try_into().unwrap(),
-            );
+            let top_left_in_chunk: (i32, i32) =
+                (top_left_in_chunk.0 as i32, top_left_in_chunk.1 as i32);
 
-            let top_left_in_chunk: (i32, i32) = (
+            let top_left_in_chunk = (
                 top_left_in_chunk.0 - pixel_offset.0,
                 top_left_in_chunk.1 - pixel_offset.1,
             );
@@ -366,7 +361,8 @@ impl Layer for RasterLayer {
             let raster_chunk = raster_chunk.unwrap_or(&self.blank_chunk);
 
             let raster_window =
-                RasterWindow::new(raster_chunk, top_left_in_chunk, width, height).unwrap();
+                RasterWindow::new(raster_chunk, top_left_in_chunk, width, height)
+                .expect("ChunkRectPosition returned by iter_chunks_in_rect should be completely contained in chunk");
 
             let draw_position_in_result: DrawPosition =
                 (x_pixel_offset, y_pixel_offset).unchecked_into_position();
@@ -432,8 +428,8 @@ impl Layer for RasterLayer {
 
             let raster_chunk = raster_chunk.unwrap_or(&self.blank_chunk);
 
-            let raster_window =
-                RasterWindow::new(raster_chunk, top_left_in_chunk, width, height).unwrap();
+            let raster_window = RasterWindow::new(raster_chunk, top_left_in_chunk, width, height)
+                .expect("ChunkRectPosition returned by iter_chunks_in_rect should be completely contained in chunk");
 
             let draw_position_in_result: DrawPosition =
                 (x_pixel_offset, y_pixel_offset).unchecked_into_position();

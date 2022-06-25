@@ -82,7 +82,11 @@ impl<'a> Iterator for GenericRasterChunkIterator<&'a RasterLayer> {
             // as that would break the invariant that a `delta` value is never
             // repeated for the lifetime of the iterator, causing
             // undefined behvaiour
-            self.delta.1 = self.delta.1.checked_add(1).unwrap();
+            self.delta.1 = self
+                .delta
+                .1
+                .checked_add(1)
+                .expect("overflow in chunk iteration, panicking to avoid unsafety");
         }
 
         if self.delta.1 >= chunk_rect.chunk_dimensions.height {
@@ -127,9 +131,9 @@ impl<'a> Iterator for GenericRasterChunkIterator<&'a RasterLayer> {
             .top_left_chunk
             .translate((x_offset, y_offset).unchecked_into_position());
 
-        // `unwrap` is ok because chunk_position is constructed to always be within
-        // `chunk_rect`.
-        let top_left_in_chunk = chunk_rect.top_left_in_chunk(chunk_position).unwrap();
+        let top_left_in_chunk = chunk_rect
+            .top_left_in_chunk(chunk_position)
+            .expect("chunk_position is constructed to be in chunk_rect");
 
         let raster_chunk = chunks.get(&chunk_position);
 
@@ -215,9 +219,9 @@ impl<'a> Iterator for GenericRasterChunkIterator<&'a mut RasterLayer> {
             .top_left_chunk
             .translate((x_offset, y_offset).unchecked_into_position());
 
-        // `unwrap` is ok because chunk_position is constructed to always be within
-        // `chunk_rect`.
-        let top_left_in_chunk = chunk_rect.top_left_in_chunk(chunk_position).unwrap();
+        let top_left_in_chunk = chunk_rect
+            .top_left_in_chunk(chunk_position)
+            .expect("chunk_position is constructed to be in chunk_rect");
 
         let raster_chunk = chunks.get_mut(&chunk_position);
 

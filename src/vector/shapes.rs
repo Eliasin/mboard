@@ -2,11 +2,7 @@ use std::ops::Mul;
 
 use crate::{
     primitives::position::PixelPosition,
-    raster::{
-        chunks::{BoxRasterChunk, RasterWindow},
-        pixels::colors,
-        Pixel,
-    },
+    raster::{chunks::BoxRasterChunk, pixels::colors, Pixel},
 };
 
 /// A polygon represented as a finite bounding box and
@@ -63,9 +59,14 @@ impl<T: Polygon> RasterizablePolygon for T {
             }
         }
 
-        RasterWindow::from_slice(pixels.as_slice(), width, height)
-            .unwrap()
-            .to_chunk()
+        BoxRasterChunk::new_fill_dynamic(
+            &mut |p| {
+                let inside_proportion = self.inside_proportion(&p);
+                self.color_from_inside_proportion(inside_proportion)
+            },
+            width,
+            height,
+        )
     }
 }
 
@@ -289,9 +290,9 @@ const LINE_SEGMENT_RADIAL_PADDING: f32 = 1.1;
 
 impl Polygon for LineSegment {
     fn bounding_box(&self) -> (usize, usize) {
-        let padded_width = ((self.from_origin.0.abs() as usize) + self.radius) as f32
+        let padded_width = (self.from_origin.0.unsigned_abs() + self.radius as u32) as f32
             * LINE_SEGMENT_RADIAL_PADDING;
-        let padded_height = ((self.from_origin.0.abs() as usize) + self.radius) as f32
+        let padded_height = (self.from_origin.0.unsigned_abs() + self.radius as u32) as f32
             * LINE_SEGMENT_RADIAL_PADDING;
 
         (padded_width as usize, padded_height as usize)

@@ -17,9 +17,9 @@ impl<T: Add<Output = T> + Copy> Position<T> {
     }
 }
 
-impl<T> Into<(T, T)> for Position<T> {
-    fn into(self) -> (T, T) {
-        (self.0, self.1)
+impl<T> From<Position<T>> for (T, T) {
+    fn from(p: Position<T>) -> Self {
+        (p.0, p.1)
     }
 }
 

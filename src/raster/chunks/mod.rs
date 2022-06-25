@@ -290,7 +290,7 @@ mod tests {
     #[test]
     fn dynamic_fill_checkerboard() {
         let checkerboard_chunk = BoxRasterChunk::new_fill_dynamic(
-            |p| {
+            &mut |p| {
                 let mut is_red = true;
                 if p.0 % 2 == 0 {
                     is_red = !is_red;
@@ -333,7 +333,7 @@ mod tests {
     #[test]
     fn dynamic_fill_gradient() {
         let gradient_chunk = BoxRasterChunk::new_fill_dynamic(
-            |p| Pixel::new_rgb_norm((1.0 + p.1 as f32) / 3.0, 0.0, (1.0 + p.0 as f32) / 3.0),
+            &mut |p| Pixel::new_rgb_norm((1.0 + p.1 as f32) / 3.0, 0.0, (1.0 + p.0 as f32) / 3.0),
             3,
             3,
         );

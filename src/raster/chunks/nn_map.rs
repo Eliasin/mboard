@@ -57,7 +57,7 @@ impl NearestNeighbourMap {
                     source_dimensions.width,
                     source_dimensions.height,
                 )
-                .unwrap();
+                .expect("transformation should provide position bounded inside source");
                 index_mappings.push(source_index);
             }
         }
@@ -93,7 +93,7 @@ impl NearestNeighbourMap {
                     self.destination_dimensions.width,
                     self.destination_dimensions.height,
                 )
-                .unwrap();
+                .expect("position is bounded");
                 let source_index = self.map[destination_index];
                 destination_chunk.pixels[destination_index] = source_chunk.pixels[source_index];
             }
@@ -126,7 +126,7 @@ impl NearestNeighbourMap {
                     self.destination_dimensions.width,
                     self.destination_dimensions.height,
                 )
-                .unwrap();
+                .expect("position is bounded");
                 let source_index = self.map[destination_index];
 
                 chunk_pixels[destination_index].write(source_chunk.pixels[source_index]);
@@ -169,7 +169,7 @@ mod test {
     #[test]
     fn scaling_using_map_is_same_as_without() {
         let gradient_chunk = BoxRasterChunk::new_fill_dynamic(
-            |p| Pixel::new_rgb_norm((1.0 + p.1 as f32) / 3.0, 0.0, (1.0 + p.0 as f32) / 3.0),
+            &mut |p| Pixel::new_rgb_norm((1.0 + p.1 as f32) / 3.0, 0.0, (1.0 + p.0 as f32) / 3.0),
             3,
             3,
         );

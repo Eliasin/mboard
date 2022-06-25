@@ -31,7 +31,9 @@ impl<'a> Display for RasterWindow<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut s = String::new();
         for row_num in 0..self.dimensions.height {
-            let row_slice = self.get_row_slice(row_num).unwrap();
+            let row_slice = self
+                .get_row_slice(row_num)
+                .expect("row_num should always be less than height");
             s += "|";
             s += display_raster_row(row_slice).as_str();
             s += "|\n";
@@ -129,12 +131,12 @@ impl<'a> RasterWindow<'a> {
             let row_start_position = (0, row);
             let row_start_source_index = self
                 .get_index_from_position(row_start_position.into())
-                .unwrap();
+                .expect("row_start_source_index should be constructed to be within the chunk");
 
             let row_end_position = (self.dimensions.width - 1, row);
             let row_end_source_index = self
                 .get_index_from_position(row_end_position.into())
-                .unwrap();
+                .expect("row_end_source_index should be constructed to be within the chunk");
 
             let row_start_new_index = row * self.dimensions.width;
             let row_end_new_index = row * self.dimensions.width + self.dimensions.width - 1;
@@ -165,12 +167,12 @@ impl<'a> RasterWindow<'a> {
             let row_start_position = (0, row);
             let row_start_source_index = self
                 .get_index_from_position(row_start_position.into())
-                .unwrap();
+                .expect("row_start_source_index should be constructed to be within the chunk");
 
             let row_end_position = (self.dimensions.width - 1, row);
             let row_end_source_index = self
                 .get_index_from_position(row_end_position.into())
-                .unwrap();
+                .expect("row_end_source_index should be constructed to be within the chunk");
 
             let row_start_new_index = row * self.dimensions.width;
             let row_end_new_index = row * self.dimensions.width + self.dimensions.width - 1;
@@ -230,7 +232,7 @@ impl<'a> IndexableByPosition for RasterWindow<'a> {
             self.backing_dimensions.width,
             self.backing_dimensions.height,
         )
-        .unwrap();
+        .expect("index should always exist for bounded positions as window area is never 0");
 
         BoundedIndex {
             index,

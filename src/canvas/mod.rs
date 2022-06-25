@@ -90,7 +90,7 @@ impl CanvasView {
             .canvas_dimensions
             .transform_point(p, self.view_dimensions);
 
-        (self.top_left + scaled_point.unchecked_into_position()).into()
+        self.top_left + scaled_point.unchecked_into_position()
     }
 
     /// Attempt to transform a position in canvas space to a position
