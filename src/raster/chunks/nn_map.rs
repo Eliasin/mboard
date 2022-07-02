@@ -52,12 +52,9 @@ impl NearestNeighbourMap {
                 let nearest =
                     source_dimensions.transform_point((column, row).into(), destination_dimensions);
 
-                let source_index = translate_rect_position_to_flat_index(
-                    nearest.into(),
-                    source_dimensions.width,
-                    source_dimensions.height,
-                )
-                .expect("transformation should provide position bounded inside source");
+                let source_index =
+                    translate_rect_position_to_flat_index(nearest.into(), source_dimensions)
+                        .expect("transformation should provide position bounded inside source");
                 index_mappings.push(source_index);
             }
         }
@@ -89,9 +86,8 @@ impl NearestNeighbourMap {
         for row in 0..self.destination_dimensions.height {
             for column in 0..self.destination_dimensions.width {
                 let destination_index = translate_rect_position_to_flat_index(
-                    (column, row),
-                    self.destination_dimensions.width,
-                    self.destination_dimensions.height,
+                    (column, row).into(),
+                    self.destination_dimensions,
                 )
                 .expect("position is bounded");
                 let source_index = self.map[destination_index];
@@ -122,9 +118,8 @@ impl NearestNeighbourMap {
         for row in 0..self.destination_dimensions.height {
             for column in 0..self.destination_dimensions.width {
                 let destination_index = translate_rect_position_to_flat_index(
-                    (column, row),
-                    self.destination_dimensions.width,
-                    self.destination_dimensions.height,
+                    (column, row).into(),
+                    self.destination_dimensions(),
                 )
                 .expect("position is bounded");
                 let source_index = self.map[destination_index];

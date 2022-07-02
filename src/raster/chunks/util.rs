@@ -1,5 +1,8 @@
 use crate::{
-    primitives::position::{DrawPosition, PixelPosition},
+    primitives::{
+        dimensions::Dimensions,
+        position::{DrawPosition, PixelPosition, Position},
+    },
     raster::{pixels::colors, Pixel},
 };
 
@@ -49,15 +52,14 @@ impl std::fmt::Display for InvalidPixelSliceSize {
 }
 
 pub fn translate_rect_position_to_flat_index(
-    position: (usize, usize),
-    width: usize,
-    height: usize,
+    position: PixelPosition,
+    dimensions: Dimensions,
 ) -> Option<usize> {
-    let offset_from_row = position.1 * width;
+    let offset_from_row = position.1 * dimensions.width;
     let offset_from_column = position.0;
 
-    let over_width = position.0 >= width;
-    let over_height = position.1 >= height;
+    let over_width = position.0 >= dimensions.width;
+    let over_height = position.1 >= dimensions.height;
 
     if over_width || over_height {
         None

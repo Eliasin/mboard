@@ -1,4 +1,4 @@
-use std::ops::Add;
+use std::ops::{Add, Mul};
 
 use num::cast::AsPrimitive;
 
@@ -8,6 +8,12 @@ use super::dimensions::Dimensions;
 /// basic operations like converting between different position types and translation.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Position<T>(pub T, pub T);
+
+impl<T: Mul<Output = T> + Copy> Position<T> {
+    pub fn mul(&self, c: T) -> Position<T> {
+        (self.0 * c, self.1 * c).into()
+    }
+}
 
 impl<T: Add<Output = T> + Copy> Position<T> {
     /// Translates a position by another, same as the `Add` impl

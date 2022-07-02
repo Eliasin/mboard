@@ -18,102 +18,18 @@ pub use util::IndexableByPosition;
 
 #[cfg(test)]
 mod tests {
-    use super::{raster_chunk::BoxRasterChunk, raster_window::*, util::*};
+    use super::{raster_chunk::BoxRasterChunk, raster_window::*};
     use crate::{
         assert_raster_eq,
-        primitives::dimensions::Dimensions,
-        raster::pixels::{colors, Pixel},
+        primitives::{
+            dimensions::Dimensions,
+            rect::{DrawRect, RasterRect},
+        },
+        raster::{
+            pixels::{colors, Pixel},
+            source::{RasterSource, Subsource},
+        },
     };
-
-    #[test]
-    fn position_translation() {
-        let raster_chunk = BoxRasterChunk::new(256, 256);
-
-        assert_eq!(Some(0), raster_chunk.get_index_from_position((0, 0).into()));
-        assert_eq!(
-            Some(256),
-            raster_chunk.get_index_from_position((0, 1).into())
-        );
-        assert_eq!(
-            Some(256 + 1),
-            raster_chunk.get_index_from_position((1, 1).into())
-        );
-        assert_eq!(
-            Some(1024 + 56),
-            raster_chunk.get_index_from_position((56, 4).into())
-        );
-
-        assert_eq!(
-            Some(256 * 256 - 1),
-            raster_chunk.get_index_from_position((255, 255).into())
-        );
-
-        let raster_window = RasterWindow::new(&raster_chunk, (64, 64).into(), 64, 64).unwrap();
-
-        assert_eq!(
-            Some((64 + 32) * 256 + (64 + 32)),
-            raster_window.get_index_from_position((32, 32).into())
-        );
-    }
-
-    #[test]
-    fn bounded_position_translation() {
-        let raster_chunk = BoxRasterChunk::new(256, 256);
-
-        assert_eq!(
-            BoundedIndex {
-                index: 0,
-                x_delta: 0,
-                y_delta: 0
-            },
-            raster_chunk.get_index_from_bounded_position((0, 0).into())
-        );
-
-        assert_eq!(
-            BoundedIndex {
-                index: 0,
-                x_delta: 1,
-                y_delta: 1
-            },
-            raster_chunk.get_index_from_bounded_position((-1, -1).into())
-        );
-
-        assert_eq!(
-            BoundedIndex {
-                index: 0,
-                x_delta: 4,
-                y_delta: 1
-            },
-            raster_chunk.get_index_from_bounded_position((-4, -1).into())
-        );
-
-        assert_eq!(
-            BoundedIndex {
-                index: 255,
-                x_delta: -1,
-                y_delta: 1
-            },
-            raster_chunk.get_index_from_bounded_position((256, -1).into())
-        );
-
-        assert_eq!(
-            BoundedIndex {
-                index: 256 * 256 - 1,
-                x_delta: -1,
-                y_delta: -1
-            },
-            raster_chunk.get_index_from_bounded_position((256, 256).into())
-        );
-
-        assert_eq!(
-            BoundedIndex {
-                index: 256 * 256 - 1,
-                x_delta: -3,
-                y_delta: -2
-            },
-            raster_chunk.get_index_from_bounded_position((258, 257).into())
-        );
-    }
 
     #[test]
     fn getting_row_slices() {
@@ -125,7 +41,7 @@ mod tests {
 
         let raster_chunk = BoxRasterChunk::from_vec(pixels, 5, 5).unwrap();
 
-        let chunk_row = raster_chunk.get_row_slice(1).unwrap();
+        let chunk_row = raster_chunk.row(1).unwrap();
         let mut expected_chunk_row = [colors::transparent(); 5];
 
         expected_chunk_row[1] = colors::blue();
@@ -136,7 +52,7 @@ mod tests {
 
         let raster_window = RasterWindow::new(&raster_chunk, (1, 1).into(), 3, 3).unwrap();
 
-        let window_row = raster_window.get_row_slice(0).unwrap();
+        let window_row = raster_window.row(0).unwrap();
 
         let mut expected_window_row = [colors::transparent(); 3];
 
@@ -149,10 +65,9 @@ mod tests {
     #[test]
     fn blitting() {
         let mut raster_chunk = BoxRasterChunk::new_fill(colors::red(), 8, 8);
-
         let blit_source = BoxRasterChunk::new_fill(colors::blue(), 2, 2);
 
-        raster_chunk.blit(&blit_source.as_window(), (2, 2).into());
+        raster_chunk.blit(&blit_source, (2, 2).into());
 
         let mut pixels = vec![colors::red(); 8 * 8];
 
@@ -163,7 +78,7 @@ mod tests {
 
         let expected_raster_chunk = BoxRasterChunk::from_vec(pixels, 8, 8).unwrap();
 
-        assert_eq!(expected_raster_chunk.pixels(), raster_chunk.pixels());
+        assert_raster_eq!(expected_raster_chunk, raster_chunk);
     }
 
     #[test]
@@ -245,8 +160,8 @@ mod tests {
         );
 
         for row in 0..shrunk.dimensions().height {
-            let shrunk_row = shrunk.get_row_slice(row).unwrap();
-            let expected_row = expected_shrunk.get_row_slice(row).unwrap();
+            let shrunk_row = shrunk.row(row).unwrap();
+            let expected_row = expected_shrunk.row(row).unwrap();
 
             assert_eq!(shrunk_row, expected_row);
         }
@@ -403,7 +318,16 @@ mod tests {
     #[test]
     fn scale_up() {
         let mut raster_chunk = BoxRasterChunk::new(10, 10);
-        raster_chunk.fill_rect(colors::red(), (0, 0).into(), 5, 5);
+        raster_chunk.fill_rect(
+            colors::red(),
+            DrawRect {
+                top_left: (0, 0).into(),
+                dimensions: Dimensions {
+                    width: 5,
+                    height: 5,
+                },
+            },
+        );
 
         raster_chunk.nn_scale(Dimensions {
             width: 20,
@@ -411,7 +335,16 @@ mod tests {
         });
 
         let mut expected = BoxRasterChunk::new(20, 20);
-        expected.fill_rect(colors::red(), (0, 0).into(), 10, 10);
+        expected.fill_rect(
+            colors::red(),
+            DrawRect {
+                top_left: (0, 0).into(),
+                dimensions: Dimensions {
+                    width: 10,
+                    height: 10,
+                },
+            },
+        );
 
         assert_raster_eq!(raster_chunk, expected);
     }
@@ -419,7 +352,16 @@ mod tests {
     #[test]
     fn scale_down() {
         let mut raster_chunk = BoxRasterChunk::new(20, 20);
-        raster_chunk.fill_rect(colors::red(), (0, 0).into(), 10, 10);
+        raster_chunk.fill_rect(
+            colors::red(),
+            DrawRect {
+                top_left: (0, 0).into(),
+                dimensions: Dimensions {
+                    width: 10,
+                    height: 10,
+                },
+            },
+        );
 
         raster_chunk.nn_scale(Dimensions {
             width: 10,
@@ -427,7 +369,16 @@ mod tests {
         });
 
         let mut expected = BoxRasterChunk::new(10, 10);
-        expected.fill_rect(colors::red(), (0, 0).into(), 5, 5);
+        expected.fill_rect(
+            colors::red(),
+            DrawRect {
+                top_left: (0, 0).into(),
+                dimensions: Dimensions {
+                    width: 5,
+                    height: 5,
+                },
+            },
+        );
 
         assert_raster_eq!(raster_chunk, expected);
     }
@@ -435,7 +386,16 @@ mod tests {
     #[test]
     fn raster_chunk_shift() {
         let mut raster_a = BoxRasterChunk::new(10, 10);
-        raster_a.fill_rect(colors::red(), (4, 2).into(), 2, 3);
+        raster_a.fill_rect(
+            colors::red(),
+            DrawRect {
+                top_left: (4, 2).into(),
+                dimensions: Dimensions {
+                    width: 2,
+                    height: 3,
+                },
+            },
+        );
 
         raster_a.horizontal_shift_left(2);
 
@@ -447,7 +407,16 @@ mod tests {
         assert_raster_eq!(shifted_a, expected_a);
 
         let mut raster_b = BoxRasterChunk::new(10, 10);
-        raster_b.fill_rect(colors::blue(), (3, 4).into(), 1, 4);
+        raster_b.fill_rect(
+            colors::blue(),
+            DrawRect {
+                top_left: (3, 4).into(),
+                dimensions: Dimensions {
+                    width: 1,
+                    height: 4,
+                },
+            },
+        );
 
         raster_b.horizontal_shift_right(2);
 
@@ -459,7 +428,16 @@ mod tests {
         assert_raster_eq!(shifted_b, expected_b);
 
         let mut raster_c = BoxRasterChunk::new(10, 10);
-        raster_c.fill_rect(colors::green(), (1, 2).into(), 2, 4);
+        raster_c.fill_rect(
+            colors::green(),
+            DrawRect {
+                top_left: (1, 2).into(),
+                dimensions: Dimensions {
+                    width: 2,
+                    height: 4,
+                },
+            },
+        );
 
         raster_c.vertical_shift_down(3);
 
@@ -471,7 +449,16 @@ mod tests {
         assert_raster_eq!(shifted_c, expected_c);
 
         let mut raster_d = BoxRasterChunk::new(10, 10);
-        raster_d.fill_rect(colors::white(), (6, 8).into(), 3, 1);
+        raster_d.fill_rect(
+            colors::white(),
+            DrawRect {
+                top_left: (6, 8).into(),
+                dimensions: Dimensions {
+                    width: 3,
+                    height: 1,
+                },
+            },
+        );
 
         raster_d.vertical_shift_up(3);
 
@@ -481,5 +468,51 @@ mod tests {
 
         let expected_d = BoxRasterChunk::new_fill(colors::white(), 3, 1);
         assert_raster_eq!(shifted_d, expected_d);
+    }
+
+    #[test]
+    fn raster_chunk_subsource() {
+        let raster_chunk = {
+            let mut r = BoxRasterChunk::new_fill(colors::blue(), 20, 10);
+            r.fill_rect(
+                colors::red(),
+                DrawRect {
+                    top_left: (5, 5).into(),
+                    dimensions: Dimensions {
+                        width: 5,
+                        height: 2,
+                    },
+                },
+            );
+            r
+        };
+
+        let subsource = raster_chunk
+            .subsource_at(RasterRect {
+                top_left: (1, 6).into(),
+                dimensions: Dimensions {
+                    width: 7,
+                    height: 2,
+                },
+            })
+            .unwrap();
+
+        let expected = {
+            let mut r = BoxRasterChunk::new_fill(colors::blue(), 7, 2);
+            r.fill_rect(
+                colors::red(),
+                DrawRect {
+                    top_left: (4, 0).into(),
+                    dimensions: Dimensions {
+                        width: 7,
+                        height: 1,
+                    },
+                },
+            );
+
+            r
+        };
+
+        assert_raster_eq!(subsource, expected);
     }
 }

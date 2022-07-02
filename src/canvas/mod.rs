@@ -115,9 +115,12 @@ impl CanvasView {
     /// in view space. Canvas rects not fully in view will map to `None`;
     pub fn transform_canvas_rect_to_view(&self, r: &CanvasRect) -> Option<ViewRect> {
         let top_left = self.transform_canvas_to_view(r.top_left)?;
-        let bottom_right = self.transform_canvas_to_view(r.bottom_right())?;
+        let bottom_right = self.transform_canvas_to_view(r.bottom_right() + (1, 1).into())?;
 
-        Some(ViewRect::from_points(top_left, bottom_right))
+        Some(ViewRect::from_points(
+            top_left,
+            (bottom_right.0 - 1, bottom_right.1 - 1).into(),
+        ))
     }
 
     /// Transform a rect in view space to a rect in canvas space.
@@ -308,7 +311,10 @@ mod tests {
     use super::*;
     use crate::{
         primitives::rect::ViewRect,
-        raster::{chunks::IndexableByPosition, Pixel, RasterLayerAction},
+        raster::{
+            chunks::{translate_rect_position_to_flat_index, IndexableByPosition},
+            Pixel, RasterLayerAction,
+        },
     };
 
     #[test]
@@ -367,7 +373,8 @@ mod tests {
         let composited_color = Pixel::new_rgba(127, 0, 127, 255);
 
         for (x, y) in (0..128).zip(0..128) {
-            let position = raster.get_index_from_position((x, y).into()).unwrap();
+            let position =
+                translate_rect_position_to_flat_index((x, y).into(), raster.dimensions()).unwrap();
             let pixel = raster.pixels()[position];
 
             if x < 64 && y < 64 {
@@ -555,6 +562,35 @@ mod tests {
         };
 
         assert_eq!(expanded_a, expected_a);
+    }
+
+    #[test]
+    fn view_transform() {
+        let canvas_view = CanvasView {
+            top_left: (-5, -5).into(),
+            view_dimensions: Dimensions {
+                width: 10,
+                height: 10,
+            },
+            canvas_dimensions: Dimensions {
+                width: 5,
+                height: 5,
+            },
+        };
+
+        assert_eq!(
+            canvas_view
+                .transform_canvas_to_view((-5, -5).into())
+                .unwrap(),
+            (0, 0).into()
+        );
+
+        assert_eq!(
+            canvas_view
+                .transform_canvas_to_view((-4, -4).into())
+                .unwrap(),
+            (2, 2).into()
+        );
     }
 
     #[test]

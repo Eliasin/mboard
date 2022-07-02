@@ -1,6 +1,12 @@
-use crate::raster::iter::PixelPositionIterator;
+use crate::raster::{
+    iter::PixelPositionIterator,
+    source::{BoundedPosition, RasterSource},
+};
 
-use super::position::PixelPosition;
+use super::{
+    position::{DrawPosition, PixelPosition, UncheckedIntoPosition},
+    rect::Rect,
+};
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Scale {
@@ -95,5 +101,35 @@ impl Dimensions {
     /// Iterator over pixel positions in rect described by dimensions.
     pub fn iter_pixels(&self) -> PixelPositionIterator {
         PixelPositionIterator::new(*self)
+    }
+
+    /// Whether or not a position is contained within a dimension.
+    pub fn contains(&self, p: PixelPosition) -> bool {
+        p.0 <= self.width && p.1 <= self.height
+    }
+
+    pub fn bound_position(&self, p: DrawPosition) -> BoundedPosition {
+        let bounded_position = (
+            p.0.min(self.width as i32 - 1).max(0),
+            p.1.min(self.height as i32 - 1).max(0),
+        )
+            .unchecked_into_position();
+
+        BoundedPosition {
+            position: bounded_position,
+            delta: (
+                bounded_position.0 as i32 - p.0,
+                bounded_position.1 as i32 - p.1,
+            ),
+        }
+    }
+
+    pub fn is_degenerate(&self) -> bool {
+        self.width == 0 || self.height == 0
+    }
+
+    pub fn contains_rect(&self, rect: &Rect<usize>) -> bool {
+        rect.top_left.0 + rect.dimensions.width <= self.width
+            && rect.top_left.1 + rect.dimensions.height <= self.height
     }
 }

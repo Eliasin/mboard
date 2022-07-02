@@ -347,8 +347,12 @@ mod tests {
     use crate::{
         assert_raster_eq,
         canvas::{CanvasRect, CanvasView},
-        primitives::{dimensions::Dimensions, position::UncheckedIntoPosition},
-        raster::{chunks::BoxRasterChunk, pixels::colors},
+        primitives::{
+            dimensions::Dimensions,
+            position::UncheckedIntoPosition,
+            rect::{DrawRect, RasterRect},
+        },
+        raster::{chunks::BoxRasterChunk, pixels::colors, source::Subsource},
     };
 
     fn rasterizer_from_chunk(
@@ -357,7 +361,12 @@ mod tests {
         |rect: &CanvasRect| {
             let position = (rect.top_left.0, rect.top_left.1).unchecked_into_position();
 
-            raster_chunk.clone_square(position, rect.dimensions.width, rect.dimensions.height)
+            raster_chunk
+                .subsource_at(RasterRect {
+                    top_left: position,
+                    dimensions: rect.dimensions,
+                })
+                .unwrap()
         }
     }
 
@@ -428,8 +437,16 @@ mod tests {
         let mut canvas_view_raster_cache = CanvasViewRasterCache::default();
         let render_chunk = {
             let mut render_chunk = BoxRasterChunk::new(100, 100);
-
-            render_chunk.fill_rect(colors::red(), (30, 30).into(), 40, 40);
+            render_chunk.fill_rect(
+                colors::red(),
+                DrawRect {
+                    top_left: (30, 30).into(),
+                    dimensions: Dimensions {
+                        width: 40,
+                        height: 40,
+                    },
+                },
+            );
 
             render_chunk
         };
@@ -456,7 +473,16 @@ mod tests {
             let expected_chunk = {
                 let mut expected_chunk = BoxRasterChunk::new(10, 10);
 
-                expected_chunk.fill_rect(colors::red(), (5, 5).into(), 5, 5);
+                expected_chunk.fill_rect(
+                    colors::red(),
+                    DrawRect {
+                        top_left: (5, 5).into(),
+                        dimensions: Dimensions {
+                            width: 5,
+                            height: 5,
+                        },
+                    },
+                );
 
                 expected_chunk
             };
@@ -483,7 +509,16 @@ mod tests {
             let expected_chunk = {
                 let mut expected_chunk = BoxRasterChunk::new(5, 5);
 
-                expected_chunk.fill_rect(colors::red(), (3, 0).into(), 2, 5);
+                expected_chunk.fill_rect(
+                    colors::red(),
+                    DrawRect {
+                        top_left: (3, 0).into(),
+                        dimensions: Dimensions {
+                            width: 2,
+                            height: 5,
+                        },
+                    },
+                );
 
                 expected_chunk
             };

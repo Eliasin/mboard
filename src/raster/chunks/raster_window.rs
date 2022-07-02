@@ -6,16 +6,18 @@ use crate::{
     primitives::{
         dimensions::Dimensions,
         position::{DrawPosition, PixelPosition, UncheckedIntoPosition},
+        rect::{DrawRect, RasterRect},
     },
-    raster::Pixel,
+    raster::{
+        source::{BoundedPosition, RasterSource, Subsource},
+        Pixel,
+    },
 };
 
 use super::{
     raster_chunk::{BoxRasterChunk, BumpRasterChunk, RasterChunk},
-    util::{
-        display_raster_row, translate_rect_position_to_flat_index, BoundedIndex,
-        IndexableByPosition, InvalidPixelSliceSize,
-    },
+    translate_rect_position_to_flat_index,
+    util::{display_raster_row, InvalidPixelSliceSize},
 };
 
 /// A reference to a sub-rectangle of a raster chunk.
@@ -32,7 +34,7 @@ impl<'a> Display for RasterWindow<'a> {
         let mut s = String::new();
         for row_num in 0..self.dimensions.height {
             let row_slice = self
-                .get_row_slice(row_num)
+                .row(row_num)
                 .expect("row_num should always be less than height");
             s += "|";
             s += display_raster_row(row_slice).as_str();
@@ -129,15 +131,17 @@ impl<'a> RasterWindow<'a> {
 
         for row in 0..self.dimensions.height {
             let row_start_position = (0, row);
-            let row_start_source_index = self
-                .get_index_from_position(row_start_position.into())
-                .expect("row_start_source_index should be constructed to be within the chunk");
-
+            let row_start_source_index = translate_rect_position_to_flat_index(
+                self.top_left + row_start_position.into(),
+                self.backing_dimensions,
+            )
+            .expect("position should be in source by construction");
             let row_end_position = (self.dimensions.width - 1, row);
-            let row_end_source_index = self
-                .get_index_from_position(row_end_position.into())
-                .expect("row_end_source_index should be constructed to be within the chunk");
-
+            let row_end_source_index = translate_rect_position_to_flat_index(
+                self.top_left + row_end_position.into(),
+                self.backing_dimensions,
+            )
+            .expect("position should be in source by construction");
             let row_start_new_index = row * self.dimensions.width;
             let row_end_new_index = row * self.dimensions.width + self.dimensions.width - 1;
 
@@ -165,18 +169,15 @@ impl<'a> RasterWindow<'a> {
 
         for row in 0..self.dimensions.height {
             let row_start_position = (0, row);
-            let row_start_source_index = self
-                .get_index_from_position(row_start_position.into())
-                .expect("row_start_source_index should be constructed to be within the chunk");
-
+            let row_start_source_index =
+                translate_rect_position_to_flat_index(row_start_position.into(), self.dimensions)
+                    .expect("position should be in source by construction");
             let row_end_position = (self.dimensions.width - 1, row);
-            let row_end_source_index = self
-                .get_index_from_position(row_end_position.into())
-                .expect("row_end_source_index should be constructed to be within the chunk");
-
+            let row_end_source_index =
+                translate_rect_position_to_flat_index(row_end_position.into(), self.dimensions)
+                    .expect("position should be in source by construction");
             let row_start_new_index = row * self.dimensions.width;
             let row_end_new_index = row * self.dimensions.width + self.dimensions.width - 1;
-
             MaybeUninit::write_slice(
                 &mut chunk_pixels[row_start_new_index..(row_end_new_index + 1)],
                 &self.backing[row_start_source_index..(row_end_source_index + 1)],
@@ -202,50 +203,128 @@ impl<'a> RasterWindow<'a> {
     }
 }
 
-impl<'a> IndexableByPosition for RasterWindow<'a> {
-    fn get_index_from_position(&self, position: PixelPosition) -> Option<usize> {
-        if position.0 > self.dimensions.width || position.1 > self.dimensions.height {
+impl<'s> Subsource for RasterWindow<'s> {
+    fn subsource_at<'a>(&'a self, subrect: RasterRect) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        self.dimensions
+            .contains_rect(&subrect)
+            .then_some(RasterWindow {
+                backing: self.backing,
+                backing_dimensions: self.backing_dimensions,
+                top_left: self.top_left.translate(subrect.top_left.into()),
+                dimensions: subrect.dimensions,
+            })
+    }
+
+    fn subsource_within_at<'a, S: RasterSource>(
+        &'a self,
+        other: &S,
+        position: DrawPosition,
+    ) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        let draw_rect = DrawRect {
+            top_left: position,
+            dimensions: self.dimensions,
+        };
+        let subsource_rect = draw_rect.subrect_contained_in(other.dimensions())?;
+        if subsource_rect.is_degenerate() {
             None
         } else {
-            translate_rect_position_to_flat_index(
-                (position + self.top_left).into(),
-                self.backing_dimensions.width,
-                self.backing_dimensions.height,
+            self.subsource_at(subsource_rect)
+        }
+    }
+}
+
+impl<'s> RasterSource for RasterWindow<'s> {
+    fn dimensions(&self) -> Dimensions {
+        self.dimensions
+    }
+
+    fn row(&self, row_num: usize) -> Option<&[Pixel]> {
+        let row_start_offset = (0, row_num).into();
+        let row_end_offset = (self.dimensions.width - 1, row_num).into();
+
+        if !self.dimensions.contains(row_start_offset) || !self.dimensions.contains(row_end_offset)
+        {
+            return None;
+        }
+
+        let row_start = self.top_left + row_start_offset;
+        let row_end = self.top_left + row_end_offset;
+
+        let row_start_index =
+            translate_rect_position_to_flat_index(row_start, self.backing_dimensions)?;
+        let row_end_index =
+            translate_rect_position_to_flat_index(row_end, self.backing_dimensions)?;
+
+        Some(&self.backing[row_start_index..row_end_index + 1])
+    }
+
+    fn subrow_from_position(
+        &self,
+        start_position: PixelPosition,
+        width: usize,
+    ) -> Option<&[Pixel]> {
+        let row_end_offset = start_position + (width - 1, 0).into();
+
+        if !self.dimensions.contains(start_position) || !self.dimensions.contains(row_end_offset) {
+            return None;
+        }
+
+        let row_start_index = translate_rect_position_to_flat_index(
+            self.top_left + start_position,
+            self.backing_dimensions,
+        )?;
+        let row_end_index = translate_rect_position_to_flat_index(
+            self.top_left + row_end_offset,
+            self.backing_dimensions,
+        )?;
+
+        Some(&self.backing[row_start_index..row_end_index + 1])
+    }
+
+    fn bounded_subrow_from_position(&self, start_position: DrawPosition, width: usize) -> &[Pixel] {
+        let end_position = self
+            .dimensions
+            .bound_position(start_position + (width as i32 - 1, 0).into())
+            .position;
+        let start_position = self.dimensions.bound_position(start_position).position;
+        let row_start_index = translate_rect_position_to_flat_index(
+            self.top_left + start_position,
+            self.backing_dimensions,
+        )
+        .expect("position is bounded");
+        let row_end_index = translate_rect_position_to_flat_index(
+            self.top_left + end_position,
+            self.backing_dimensions,
+        )
+        .expect("position is bounded");
+
+        &self.backing[row_start_index..row_end_index + 1]
+    }
+
+    fn pixel_at_position(&self, position: PixelPosition) -> Option<Pixel> {
+        self.dimensions
+            .contains(position)
+            .then_some(
+                translate_rect_position_to_flat_index(
+                    self.top_left + position,
+                    self.backing_dimensions,
+                )
+                .map(|index| self.backing[index]),
             )
-        }
+            .flatten()
     }
 
-    fn get_row_slice(&self, row_num: usize) -> Option<&[Pixel]> {
-        let row_start = self.get_index_from_position((0, row_num).into())?;
-        let row_end = self.get_index_from_position((self.dimensions.width - 1, row_num).into())?;
-
-        Some(&self.backing[row_start..row_end + 1])
-    }
-
-    fn get_index_from_bounded_position(&self, position: DrawPosition) -> BoundedIndex {
-        let bounded_position = self.bound_position(position);
-
-        // Since we bound x and y, this is guaranteed to not panic as long as the total area is
-        // not 0.
-        let index = translate_rect_position_to_flat_index(
-            (bounded_position + self.top_left).into(),
-            self.backing_dimensions.width,
-            self.backing_dimensions.height,
+    fn pixel_at_bounded_position(&self, position: DrawPosition) -> Pixel {
+        self.backing[translate_rect_position_to_flat_index(
+            self.dimensions.bound_position(position).position,
+            self.dimensions,
         )
-        .expect("index should always exist for bounded positions as window area is never 0");
-
-        BoundedIndex {
-            index,
-            x_delta: bounded_position.0 as i32 - position.0,
-            y_delta: bounded_position.1 as i32 - position.1,
-        }
-    }
-
-    fn bound_position(&self, position: DrawPosition) -> PixelPosition {
-        (
-            position.0.min(self.dimensions.width as i32 - 1).max(0),
-            position.1.min(self.dimensions.height as i32 - 1).max(0),
-        )
-            .unchecked_into_position()
+        .expect("position is bounded")]
     }
 }

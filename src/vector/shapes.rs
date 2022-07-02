@@ -204,7 +204,7 @@ impl Polygon for Oval {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct Circle {
     oval: Oval,
     roughness: u32,
@@ -331,8 +331,9 @@ impl Polygon for LineSegment {
 
 #[cfg(test)]
 mod tests {
+    use crate::raster::chunks::translate_rect_position_to_flat_index;
+
     use super::*;
-    use crate::raster::chunks::IndexableByPosition;
 
     #[test]
     fn circle_rasterization() {
@@ -344,7 +345,8 @@ mod tests {
         let (width, height) = circle.bounding_box();
 
         for (x, y) in (0..width).zip(0..height) {
-            let position = raster.get_index_from_position((x, y).into()).unwrap();
+            let position =
+                translate_rect_position_to_flat_index((x, y).into(), raster.dimensions()).unwrap();
 
             let (x, y) = (x as f32, y as f32);
             let origin = (width as f32 / 2.0, height as f32 / 2.0);

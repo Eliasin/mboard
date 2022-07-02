@@ -6,21 +6,21 @@ use super::{
 
 use crate::primitives::{
     dimensions::Dimensions,
-    position::{ChunkPosition, PixelPosition, UncheckedIntoPosition},
+    position::{ChunkPosition, PixelPosition, Position, UncheckedIntoPosition},
 };
 use std::collections::HashMap;
 
 /// Iterator over individual `PixelPosition`s in a dimension space.
 pub struct PixelPositionIterator {
     dimensions: Dimensions,
-    current: PixelPosition,
+    current: Option<PixelPosition>,
 }
 
 impl PixelPositionIterator {
     pub fn new(dimensions: Dimensions) -> PixelPositionIterator {
         PixelPositionIterator {
             dimensions,
-            current: PixelPosition::from((0, 0)),
+            current: None,
         }
     }
 }
@@ -29,20 +29,76 @@ impl Iterator for PixelPositionIterator {
     type Item = PixelPosition;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current.0 >= self.dimensions.width {
-            self.current.0 = 0;
-            self.current.1 += 1;
-        }
+        match self.current {
+            Some(mut current) => {
+                current.0 += 1;
+                if current.0 >= self.dimensions.width {
+                    current.0 = 0;
+                    current.1 += 1;
+                }
 
-        if self.current.1 >= self.dimensions.height {
-            None
-        } else {
-            Some(self.current)
+                self.current = Some(current);
+
+                if current.1 >= self.dimensions.height {
+                    None
+                } else {
+                    self.current
+                }
+            }
+            None => {
+                self.current = Some((0, 0).into());
+                self.current
+            }
         }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let pixels_left = self.dimensions.width * self.dimensions.height
+            - self
+                .current
+                .map(|Position(x, y)| x + y * self.dimensions.width)
+                .unwrap_or(0);
+
+        (pixels_left, Some(pixels_left))
     }
 }
 
 impl ExactSizeIterator for PixelPositionIterator {}
+
+pub struct NearestNeighbourMappingIterator {
+    source_dimensions: Dimensions,
+    pixel_position_iterator: PixelPositionIterator,
+}
+
+impl NearestNeighbourMappingIterator {
+    pub fn new(
+        source_dimensions: Dimensions,
+        new_dimensions: Dimensions,
+    ) -> NearestNeighbourMappingIterator {
+        NearestNeighbourMappingIterator {
+            source_dimensions,
+            pixel_position_iterator: PixelPositionIterator::new(new_dimensions),
+        }
+    }
+}
+
+impl Iterator for NearestNeighbourMappingIterator {
+    type Item = (PixelPosition, PixelPosition);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.pixel_position_iterator
+            .next()
+            .map(|next_pixel_position_in_new_dimensions| {
+                (
+                    next_pixel_position_in_new_dimensions,
+                    self.source_dimensions.transform_point(
+                        next_pixel_position_in_new_dimensions,
+                        self.pixel_position_iterator.dimensions,
+                    ),
+                )
+            })
+    }
+}
 
 pub type RasterChunkIterator<'a> = GenericRasterChunkIterator<&'a RasterLayer>;
 pub type RasterChunkIteratorMut<'a> = GenericRasterChunkIterator<&'a mut RasterLayer>;

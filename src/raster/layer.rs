@@ -444,7 +444,11 @@ impl Layer for RasterLayer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{assert_raster_eq, raster::pixels::colors};
+    use crate::{
+        assert_raster_eq,
+        primitives::rect::{DrawRect, RasterRect},
+        raster::pixels::colors,
+    };
 
     #[test]
     fn chunk_visibility_easy() {
@@ -544,7 +548,17 @@ mod tests {
         view.translate((-5, 0).into());
 
         let mut expected_result = BoxRasterChunk::new(10, 10);
-        expected_result.fill_rect(colors::red(), DrawPosition::from((5, 0)), 5, 10);
+        // DrawPosition::from((5, 0)), 5, 10
+        expected_result.fill_rect(
+            colors::red(),
+            DrawRect {
+                top_left: (5, 0).into(),
+                dimensions: Dimensions {
+                    width: 5,
+                    height: 10,
+                },
+            },
+        );
 
         let raster = raster_layer.rasterize(&view);
 
@@ -732,7 +746,16 @@ mod tests {
         let raster = raster_layer.rasterize(&view);
 
         let mut expected = BoxRasterChunk::new(10, 10);
-        expected.fill_rect(colors::red(), (4, 4).into(), 2, 2);
+        expected.fill_rect(
+            colors::red(),
+            DrawRect {
+                top_left: (4, 4).into(),
+                dimensions: Dimensions {
+                    width: 2,
+                    height: 2,
+                },
+            },
+        );
 
         expected.nn_scale(Dimensions {
             width: 20,
